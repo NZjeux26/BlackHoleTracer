@@ -8,9 +8,13 @@
                 "-fcolor-diagnostics",
                 "-fansi-escape-codes",
                 "-g",
+                "-I/opt/homebrew/opt/sdl2/include",               // <-- Add SDL2 headers
+                "-I/opt/homebrew/Cellar/sdl2/2.32.4/include",       // <-- (optional second path)
                 "${file}",
                 "-o",
-                "${fileDirname}/${fileBasenameNoExtension}"
+                "${fileDirname}/${fileBasenameNoExtension}",
+                "-L/opt/homebrew/opt/sdl2/lib",                    // <-- Add SDL2 lib path
+                "-lSDL2"                                           // <-- Link with SDL2
             ],
             "options": {
                 "cwd": "${fileDirname}"
