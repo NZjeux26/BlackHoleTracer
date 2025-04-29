@@ -25,7 +25,7 @@ int main() {
         return 1;
     }
 
-    SDL_Surface* surface = SDL_CreateRGBSurface(0, width, height, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000); //Co-Pilot wanted 0
+    SDL_Surface* surface = SDL_CreateRGBSurface(0, width, height, 32, 0, 0, 0, 0); //Co-Pilot wanted 0
 
     BlackHoleParams params = {
         .mass = 1.0,
@@ -33,7 +33,7 @@ int main() {
         .accretion_disk_inner_radius = 3.0,
         .accretion_disk_outer_radius = 20.0,
         .accretion_disk_thickness = 0.1,
-        .observer_distance = 50.0,
+        .observer_distance = 100.0,
     };
 
     raytrace_blackhole(params, surface);

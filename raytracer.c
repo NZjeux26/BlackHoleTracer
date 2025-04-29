@@ -114,9 +114,9 @@ bool check_accretion_disk_intersection(Vec3 pos, Vec3 dir, BlackHoleParams param
         //Material left side is approaching the observer(blue shift)
         //Material on the right is moving away(red shift)
         if(sin(angle) < 0){
-            doppler_factor = 1.2; //- (params.schwarzschild_radius / r);
+            doppler_factor = 1.0 - (params.schwarzschild_radius / r);
         } else {
-            doppler_factor = 0.8; //+ (params.schwarzschild_radius / r);   
+            doppler_factor = 1.0 + (params.schwarzschild_radius / r);   
         }
 
         //Intensity falls of with distance
@@ -126,11 +126,12 @@ bool check_accretion_disk_intersection(Vec3 pos, Vec3 dir, BlackHoleParams param
         //Clamp the intensity to a max value
         if(intensity > 1.0) intensity = 1.0;
         
-        Uint8 r_col = (Uint8)(255 * intensity); //255 is the max value for a colour
-        Uint8 g_col = (Uint8)(220 * intensity);
-        Uint8 b_col = (Uint8)(180 * intensity);
-
-        return (r_col << 16) | (g_col << 8) | b_col; //RGB colour
+           //Convert to a colour value
+           Uint32 colour = SDL_MapRGB(SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888), 
+           (Uint8)(intensity * 255), 
+           (Uint8)(intensity * 220), 
+           (Uint8)(intensity * 180));
+            return colour;
     }
 
     Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Params){
