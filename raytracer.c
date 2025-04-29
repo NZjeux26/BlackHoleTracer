@@ -56,18 +56,20 @@ bool trace_rayStep(Vec3* pos, Vec3* dir, double* t, BlackHoleParams params, doub
 
     //Calculate the gravitational lensing/deflection
     //Simplfied approx from AI for geodesic equation
-    double deflection_factor = params.schwarzschild_radius / (r * r);
+    double deflection_factor = 2.5 * params.schwarzschild_radius / (r * r);
 
     //direction from pos to the black hole centre
     Vec3 radial_dir = vec3_normalise(to_centre);
 
     //component of velocity perpendicular to radial direction
-    //double parallel_component = vec_dot(*dir, radial_dir);
-    //Vec3 perpendicular_component = vec3_sub(*dir, vec3_scale(radial_dir, parallel_component)); // **This isn't used anywhere? 
+    double parallel_component = vec_dot(*dir, radial_dir);
+    Vec3 parallel_vector = vec3_scale(radial_dir, parallel_component);
+    Vec3 perpendicular_vector = vec3_sub(*dir, parallel_vector); // **This isn't used anywhere? 
 
     //Apply the gravitational deflection to the ray
-    Vec3 deflection = vec3_scale(radial_dir, deflection_factor);
-    *dir = vec3_normalise(vec3_add(*dir, deflection));
+    Vec3 deflection_perpendicular = vec3_scale(perpendicular_vector, 1.0 - deflection_factor);
+    
+    *dir = vec3_normalise(vec3_add(parallel_vector, deflection_perpendicular));
 
     *pos = vec3_add(*pos, vec3_scale(*dir, step_size));
 
@@ -98,111 +100,113 @@ bool check_accretion_disk_intersection(Vec3 pos, Vec3 dir, BlackHoleParams param
         return false;    
     }
     //calculate the colour based on the temp/brightness of the disk
-    Uint32 cal_accretion_disk_colour(Vec3 intersection_point, BlackHoleParams params){
-        //distance from the centre
-        double r = sqrt(intersection_point.x * intersection_point.x + 
-                        intersection_point.y * intersection_point.y);
+Uint32 cal_accretion_disk_colour(Vec3 intersection_point, BlackHoleParams params){
+    //distance from the centre
+    double r = sqrt(intersection_point.x * intersection_point.x + 
+                    intersection_point.y * intersection_point.y);
 
-        //Cal the angualar velocity of the disk(simple model)
-        //double omega = sqrt(params.mass / (r * r * r)); //this is never used(in this simplfied model)
+    //Cal the angualar velocity of the disk(simple model)
+    double omega = sqrt(params.mass / (r * r * r)); //this is never used(in this simplfied model)
 
-        //Calculate the reativistic effects(simplified)
-        //Doppler effect based on whether material is moving away to towards the observer
-        double angle = atan2(intersection_point.y, intersection_point.x);
-        double doppler_factor = 1.0;
+    //Calculate the reativistic effects(simplified)
+    //Doppler effect based on whether material is moving away to towards the observer
+    double angle = atan2(intersection_point.y, intersection_point.x);
+    
+    double velocity = r * omega;
 
-        //Material left side is approaching the observer(blue shift)
-        //Material on the right is moving away(red shift)
-        if(sin(angle) < 0){
-            doppler_factor = 1.0 - (params.schwarzschild_radius / r);
-        } else {
-            doppler_factor = 1.0 + (params.schwarzschild_radius / r);   
-        }
+    double doppler_factor;
 
-        //Intensity falls of with distance
-        double intensity = params.accretion_disk_outer_radius / r;
-        intensity = intensity * doppler_factor;
-
-        //Clamp the intensity to a max value
-        if(intensity > 1.0) intensity = 1.0;
-        
-           //Convert to a colour value
-           Uint32 colour = SDL_MapRGB(SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888), 
-           (Uint8)(intensity * 255), 
-           (Uint8)(intensity * 220), 
-           (Uint8)(intensity * 180));
-            return colour;
+    if(sin(angle) < 0){
+        doppler_factor = 1.5;
+    }else{
+        doppler_factor = 0.7;
     }
 
-    Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Params){
-        Vec3 pos = ray_origin;
-        Vec3 dir = ray_dir;
+    doppler_factor += (1.0 + 0.2 * cos(angle));
+
+    double base_intensity = 3.0 * params.schwarzschild_radius / r;
+    double intensity = base_intensity * doppler_factor;
+    
+    //Clamp the intensity to a max value
+    if(intensity > 1.0) intensity = 1.0;
+    
+    //Convert to a colour value
+    Uint32 colour = SDL_MapRGB(SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888), 
+    (Uint8)(intensity * 200), 
+    (Uint8)(intensity * 130), 
+    (Uint8)(intensity * 240));
+    return colour;
+}
+
+Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Params){
+    Vec3 pos = ray_origin;
+    Vec3 dir = ray_dir;
+    
+    //BG colour
+    Uint32 colour = 0x000000; //default black
+
+    //RT parameters
+    double step_size = Params.schwarzschild_radius * 0.01; //step size for ray tracing
+    int max_steps = 3000; //max number of steps
+    double max_distance = Params.observer_distance * 10;
+
+    for (int step = 0; step < max_steps; step++){
+        double intersection_distance = 0.0;
+        Vec3 intersection_point = {0.0, 0.0, 0.0};
         
-        //BG colour
-        Uint32 colour = 0x000000; //default black
+        if(check_accretion_disk_intersection(pos, dir, Params, &intersection_distance, &intersection_point)){
+            //Calculate the colour based on the intersection point
+            colour = cal_accretion_disk_colour(intersection_point, Params);
+            break;
+        }
 
-        //RT parameters
-        double step_size = Params.schwarzschild_radius * 0.01; //step size for ray tracing
-        int max_steps = 1000; //max number of steps
-        double max_distance = Params.observer_distance * 10;
+        //Move ray forward and apply gravitional lensing
+        if(!trace_rayStep(&pos, &dir, &step_size, Params, step_size)){
+            //Ray has crossed the event horizon
+            colour = 0x000000; //black hole colour
+            break;
+        }
+        //Check if the ray has moved too far
+        if(vec3_length(vec3_sub(pos, ray_origin)) > max_distance){
+            //Ray has moved too far
+            colour = 0x000000; //black hole colour
+            break;
+        }
+    }
+    return colour;
+}
 
-        for (int step = 0; step < max_steps; step++){
-            double intersection_distance = 0.0;
-            Vec3 intersection_point = {0.0, 0.0, 0.0};
+//Ray tracing function for the black hole
+//This function will be called from the main function
+void raytrace_blackhole(BlackHoleParams params, SDL_Surface* surface){
+    int width = surface->w;
+    int height = surface->h;
+    double aspect_ratio = (double)width / (double)height;
+    double fov = 30.0 * M_PI / 180.0; //Field of view in radians
+
+    SDL_LockSurface(surface);
+    Uint32* pixels = (Uint32*)surface->pixels;
+
+    memset(pixels, 0, width * height * sizeof(Uint32)); //clear the surface
+    //Loop through each pixel in the surface    
+    for(int y = 0; y < height; y++){
+        for(int x = 0; x < width; x++){
+            //Calculate the ray direction
+            double screen_x = (2.0 * (x + 0.5) / width - 1.0) * aspect_ratio * tan(fov / 2.0);
+            double screen_y = (1.0 - 2.0 * (y + 0.5) / height) * tan(fov / 2.0);
             
-            if(check_accretion_disk_intersection(pos, dir, Params, &intersection_distance, &intersection_point)){
-                //Calculate the colour based on the intersection point
-                colour = cal_accretion_disk_colour(intersection_point, Params);
-                break;
-            }
-
-            //Move ray forward and apply gravitional lensing
-            if(!trace_rayStep(&pos, &dir, &step_size, Params, step_size)){
-                //Ray has crossed the event horizon
-                colour = 0x000000; //black hole colour
-                break;
-            }
-            //Check if the ray has moved too far
-            if(vec3_length(vec3_sub(pos, ray_origin)) > max_distance){
-                //Ray has moved too far
-                colour = 0x000000; //black hole colour
-                break;
-            }
+            //Ray origin
+            Vec3 ray_origin = {0.0, 0.0, -params.observer_distance}; //ray origin
+            //Ray direction
+            Vec3 ray_dir = {screen_x, screen_y, 1.0}; //ray direction
+            ray_dir = vec3_normalise(ray_dir); //normalise the direction
+            
+            //Trace the ray
+            Uint32 colour = trace_black_hole_ray(ray_origin, ray_dir, params);
+            
+            //Set the pixel colour
+            pixels[y * width + x] = colour;
         }
-        return colour;
     }
-
-    //Ray tracing function for the black hole
-    //This function will be called from the main function
-    void raytrace_blackhole(BlackHoleParams params, SDL_Surface* surface){
-        int width = surface->w;
-        int height = surface->h;
-        double aspect_ratio = (double)width / (double)height;
-        double fov = 30.0 * M_PI / 180.0; //Field of view in radians
-
-        SDL_LockSurface(surface);
-        Uint32* pixels = (Uint32*)surface->pixels;
-
-        memset(pixels, 0, width * height * sizeof(Uint32)); //clear the surface
-        //Loop through each pixel in the surface    
-        for(int y = 0; y < height; y++){
-            for(int x = 0; x < width; x++){
-                //Calculate the ray direction
-                double screen_x = (2.0 * (x + 0.5) / width - 1.0) * aspect_ratio * tan(fov / 2.0);
-                double screen_y = (1.0 - 2.0 * (y + 0.5) / height) * tan(fov / 2.0);
-                
-                //Ray origin
-                Vec3 ray_origin = {0.0, 0.0, -params.observer_distance}; //ray origin
-                //Ray direction
-                Vec3 ray_dir = {screen_x, screen_y, 1.0}; //ray direction
-                ray_dir = vec3_normalise(ray_dir); //normalise the direction
-                
-                //Trace the ray
-                Uint32 colour = trace_black_hole_ray(ray_origin, ray_dir, params);
-                
-                //Set the pixel colour
-                pixels[y * width + x] = colour;
-            }
-        }
-        SDL_UnlockSurface(surface);
-    }
+    SDL_UnlockSurface(surface);
+}
