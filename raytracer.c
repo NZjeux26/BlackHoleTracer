@@ -45,7 +45,7 @@ Vec3 vec3_cross(Vec3 a, Vec3 b){
     return result;
 }
 //Function to calculate the ray deflection in a simplified Schwarzschild metric
-bool trace_rayStep(Vec3* pos, Vec3* dir, double* t, BlackHoleParams params, double step_size){
+bool trace_rayStep(Vec3* pos, Vec3* dir, BlackHoleParams params, double step_size){
     
     //Distance from the black hold centre
     Vec3 to_centre = vec3_scale(*pos, -1.0);
@@ -64,7 +64,7 @@ bool trace_rayStep(Vec3* pos, Vec3* dir, double* t, BlackHoleParams params, doub
     //component of velocity perpendicular to radial direction
     double parallel_component = vec_dot(*dir, radial_dir);
     Vec3 parallel_vector = vec3_scale(radial_dir, parallel_component);
-    Vec3 perpendicular_vector = vec3_sub(*dir, parallel_vector); // **This isn't used anywhere? 
+    Vec3 perpendicular_vector = vec3_sub(*dir, parallel_vector);
 
     //Apply the gravitational deflection to the ray
     Vec3 deflection_perpendicular = vec3_scale(perpendicular_vector, 1.0 - deflection_factor);
@@ -92,7 +92,7 @@ bool check_accretion_disk_intersection(Vec3 pos, Vec3 dir, BlackHoleParams param
         //check if the point is within the accetion disk bounds
         if(distance_from_centre >= params.accretion_disk_inner_radius &&
             distance_from_centre <= params.accretion_disk_outer_radius &&
-            fabs(intersect.z <= params.accretion_disk_thickness)){
+            fabs(intersect.z) <= params.accretion_disk_thickness){
                 *intersection_distance = t;
                 *intersection_point = intersect;
                 return true;
@@ -107,34 +107,34 @@ Uint32 cal_accretion_disk_colour(Vec3 intersection_point, BlackHoleParams params
 
     //Cal the angualar velocity of the disk(simple model)
     double omega = sqrt(params.mass / (r * r * r)); //this is never used(in this simplfied model)
+    // Compute disk velocity at intersection point
+    Vec3 vel = {-omega * intersection_point.y, omega * intersection_point.x, 0.0};
+    double beta = vec3_length(vel);
+
+    //Direction to Camera
+    Vec3 observer_dir = {0,0,-1};
+    double cos_theta = vec_dot(vec3_normalise(vel), observer_dir);
+
+    double gamma = 1.0 / sqrt(1 - beta * beta);
+    double doppler = gamma * (1.0 - beta * cos_theta);
+    
+    double base_intensity = 3.0 * params.schwarzschild_radius / r;
+    double intensity = base_intensity * pow(doppler,3);
 
     //Calculate the reativistic effects(simplified)
     //Doppler effect based on whether material is moving away to towards the observer
     double angle = atan2(intersection_point.y, intersection_point.x);
-    
-    double velocity = r * omega;
-
-    double doppler_factor;
-
-    if(sin(angle) < 0){
-        doppler_factor = 1.5;
-    }else{
-        doppler_factor = 0.7;
-    }
-
-    doppler_factor += (1.0 + 0.2 * cos(angle));
-
-    double base_intensity = 3.0 * params.schwarzschild_radius / r;
-    double intensity = base_intensity * doppler_factor;
-    
+  
     //Clamp the intensity to a max value
-    if(intensity > 1.0) intensity = 1.0;
+    if (intensity > 1.0) intensity = 1.0;
+    if (intensity < 0.0) intensity = 0.0;
+   
     
     //Convert to a colour value
     Uint32 colour = SDL_MapRGB(SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888), 
-    (Uint8)(intensity * 200), 
-    (Uint8)(intensity * 130), 
-    (Uint8)(intensity * 240));
+        (Uint8)(intensity * 200), 
+        (Uint8)(intensity * 130), 
+        (Uint8)(intensity * 240));
     return colour;
 }
 
@@ -147,7 +147,7 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
 
     //RT parameters
     double step_size = Params.schwarzschild_radius * 0.01; //step size for ray tracing
-    int max_steps = 3000; //max number of steps
+    int max_steps = 2000; //max number of steps
     double max_distance = Params.observer_distance * 10;
 
     for (int step = 0; step < max_steps; step++){
@@ -161,7 +161,7 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
         }
 
         //Move ray forward and apply gravitional lensing
-        if(!trace_rayStep(&pos, &dir, &step_size, Params, step_size)){
+        if(!trace_rayStep(&pos, &dir, Params, step_size)){
             //Ray has crossed the event horizon
             colour = 0x000000; //black hole colour
             break;

@@ -33,7 +33,7 @@ int main() {
         .accretion_disk_inner_radius = 3.0,
         .accretion_disk_outer_radius = 20.0,
         .accretion_disk_thickness = 0.1,
-        .observer_distance = 125.0,
+        .observer_distance = 100.0,
     };
 
     raytrace_blackhole(params, surface);
