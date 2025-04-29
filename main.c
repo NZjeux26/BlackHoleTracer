@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <SDL2/SDL.h>
+#include "raytracer.h"
 
 int main() {
     printf("Hello, World!@@!\n");
