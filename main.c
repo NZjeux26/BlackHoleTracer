@@ -6,6 +6,76 @@
 #include "raytracer.h"
 
 int main() {
-    printf("Hello, World!@@!\n");
+    int width = 1920;
+    int height = 1200;
+
+    SDL_Window* window = SDL_CreateWindow("Black Hole Raytracer", 
+                                  SDL_WINDOWPOS_UNDEFINED, 
+                                  SDL_WINDOWPOS_UNDEFINED, 
+                                  width, height, 0);
+    if (!window) {
+        fprintf(stderr, "Could not create window: %s\n", SDL_GetError());
+        return 1;
+    }
+
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (!renderer) {
+        fprintf(stderr, "Could not create renderer: %s\n", SDL_GetError());
+        SDL_DestroyWindow(window);
+        return 1;
+    }
+
+    SDL_Surface* surface = SDL_CreateRGBSurface(0, width, height, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000); //Co-Pilot wanted 0
+
+    BlackHoleParams params = {
+        .mass = 1.0,
+        .schwarzschild_radius = 1.0,
+        .accretion_disk_inner_radius = 3.0,
+        .accretion_disk_outer_radius = 20.0,
+        .accretion_disk_thickness = 0.1,
+        .observer_distance = 50.0,
+    };
+
+    raytrace_blackhole(params, surface);
+    // Create a texture from the surface
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+    if (!texture) {
+        fprintf(stderr, "Could not create texture: %s\n", SDL_GetError());
+        SDL_FreeSurface(surface);
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        return 1;
+    }
+    // Main loop
+    SDL_Event event;
+    bool running = true;
+   
+    while (running) {
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                running = false;
+            }
+            if (event.type == SDL_KEYDOWN) {
+                if (event.key.keysym.sym == SDLK_ESCAPE) {
+                    running = false;
+                }
+            }
+        }
+
+        // Clear the screen
+        SDL_RenderClear(renderer);
+
+        // Render the texture
+        SDL_RenderCopy(renderer, texture, NULL, NULL);
+
+        // Present the back buffer
+        SDL_RenderPresent(renderer);
+    }
+    // Clean up
+    SDL_DestroyTexture(texture);
+    SDL_FreeSurface(surface);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
     return 0;
 }
