@@ -99,20 +99,18 @@ bool check_accretion_disk_intersection(Vec3 pos, Vec3 dir, BlackHoleParams param
         }
         return false;    
     }
-    //calculate the colour based on the temp/brightness of the disk
+//calculate the colour based on the temp/brightness of the disk
 Uint32 cal_accretion_disk_colour(Vec3 intersection_point, BlackHoleParams params){
     //distance from the centre
     double r = sqrt(intersection_point.x * intersection_point.x + 
                     intersection_point.y * intersection_point.y);
 
     //Cal the angualar velocity of the disk(simple model)
-    double omega = sqrt(params.mass / (r * r * r)); //this is never used(in this simplfied model)
+    //double omega = sqrt(params.mass / (r * r * r)); //this is never used(in this simplfied model)
 
     //Calculate the reativistic effects(simplified)
     //Doppler effect based on whether material is moving away to towards the observer
     double angle = atan2(intersection_point.y, intersection_point.x);
-    
-    double velocity = r * omega;
 
     double doppler_factor;
 
@@ -127,16 +125,8 @@ Uint32 cal_accretion_disk_colour(Vec3 intersection_point, BlackHoleParams params
     double base_intensity = 3.0 * params.schwarzschild_radius / r;
     double intensity = base_intensity * doppler_factor;
     
-    Vec3 vel = {-omega * intersection_point.y, omega * intersection_point.x, 0.0};
-    double beta = vec3_length(vel);
-    double cos_theta = vec_dot(vec3_normalise(vel), (Vec3){0,0,1});
-    double gamma = 1.0 / sqrt(1 - beta * beta);
-    double doppler = gamma * (1.0 - beta * cos_theta);
-
     //Clamp the intensity to a max value
-    intensity *= pow(doppler, 3);
-    if (intensity > 1.0) intensity = 1.0;
-    //intensity = intensity / (1.0 + intensity); // Reinhard tone mapping
+    if(intensity > 1.0) intensity = 1.0;
     
     //Convert to a colour value
     Uint32 colour = SDL_MapRGB(SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888), 
@@ -154,9 +144,10 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
     Uint32 colour = 0x000000; //default black
 
     //RT parameters
-    double step_size = Params.schwarzschild_radius * 0.01; //step size for ray tracing
-    int max_steps = 2000; //max number of steps
+    double base_step_size = Params.schwarzschild_radius * 0.01; //step size for ray tracing
+    int max_steps = 2500; //max number of steps
     double max_distance = Params.observer_distance * 10;
+    double distance_travelled = 0;
 
     for (int step = 0; step < max_steps; step++){
         double intersection_distance = 0.0;
@@ -167,19 +158,29 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
             colour = cal_accretion_disk_colour(intersection_point, Params);
             break;
         }
-
+        // Adaptive step size: shrinks near BH to capture lensing, grows far away for speed
+        double r = vec3_length(pos);
+        double epsilon = 1e-6;
+        double step_size = base_step_size * (1.0 + (Params.schwarzschild_radius / (r + epsilon)) * (Params.schwarzschild_radius / (r + epsilon)));
+        
         //Move ray forward and apply gravitional lensing
         if(!trace_rayStep(&pos, &dir, Params, step_size)){
             //Ray has crossed the event horizon
             colour = 0x000000; //black hole colour
             break;
         }
-        //Check if the ray has moved too far
-        if(vec3_length(vec3_sub(pos, ray_origin)) > max_distance){
-            //Ray has moved too far
-            colour = 0x000000; //black hole colour
+       
+        distance_travelled += step_size;
+        if (distance_travelled > max_distance) {
+            colour = 0x000000;
             break;
         }
+        //Check if the ray has moved too far
+        // if(vec3_length(vec3_sub(pos, ray_origin)) > max_distance){
+        //     //Ray has moved too far
+        //     colour = 0x000000; //black hole colour
+        //     break;
+        // }
     }
     return colour;
 }

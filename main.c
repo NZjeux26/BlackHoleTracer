@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <time.h>
 #include <SDL2/SDL.h>
 #include "raytracer.h"
 
@@ -33,10 +34,23 @@ int main() {
         .accretion_disk_inner_radius = 3.0,
         .accretion_disk_outer_radius = 20.0,
         .accretion_disk_thickness = 0.1,
-        .observer_distance = 100.0,
+        .observer_distance = 90.0,
     };
 
+    printf("Starting raytracing.....\n");
+    clock_t start_time, end_time;
+    double cpu_time_used;
+
+    start_time = clock();
+
     raytrace_blackhole(params, surface);
+
+    end_time = clock();
+    cpu_time_used = ((double) (end_time - start_time)) / CLOCKS_PER_SEC;
+
+    printf("Raytracing finished.\n");
+    printf("Time taken for raytrace_blackhole: %f seconds\n", cpu_time_used);
+
     // Create a texture from the surface
     SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
     if (!texture) {
