@@ -107,34 +107,42 @@ Uint32 cal_accretion_disk_colour(Vec3 intersection_point, BlackHoleParams params
 
     //Cal the angualar velocity of the disk(simple model)
     double omega = sqrt(params.mass / (r * r * r)); //this is never used(in this simplfied model)
-    // Compute disk velocity at intersection point
-    Vec3 vel = {-omega * intersection_point.y, omega * intersection_point.x, 0.0};
-    double beta = vec3_length(vel);
-
-    //Direction to Camera
-    Vec3 observer_dir = {0,0,-1};
-    double cos_theta = vec_dot(vec3_normalise(vel), observer_dir);
-
-    double gamma = 1.0 / sqrt(1 - beta * beta);
-    double doppler = gamma * (1.0 - beta * cos_theta);
-    
-    double base_intensity = 3.0 * params.schwarzschild_radius / r;
-    double intensity = base_intensity * pow(doppler,3);
 
     //Calculate the reativistic effects(simplified)
     //Doppler effect based on whether material is moving away to towards the observer
     double angle = atan2(intersection_point.y, intersection_point.x);
-  
+    
+    double velocity = r * omega;
+
+    double doppler_factor;
+
+    if(sin(angle) < 0){
+        doppler_factor = 1.5;
+    }else{
+        doppler_factor = 0.7;
+    }
+
+    doppler_factor += (1.0 + 0.2 * cos(angle));
+
+    double base_intensity = 3.0 * params.schwarzschild_radius / r;
+    double intensity = base_intensity * doppler_factor;
+    
+    Vec3 vel = {-omega * intersection_point.y, omega * intersection_point.x, 0.0};
+    double beta = vec3_length(vel);
+    double cos_theta = vec_dot(vec3_normalise(vel), (Vec3){0,0,1});
+    double gamma = 1.0 / sqrt(1 - beta * beta);
+    double doppler = gamma * (1.0 - beta * cos_theta);
+
     //Clamp the intensity to a max value
+    intensity *= pow(doppler, 3);
     if (intensity > 1.0) intensity = 1.0;
-    if (intensity < 0.0) intensity = 0.0;
-   
+    //intensity = intensity / (1.0 + intensity); // Reinhard tone mapping
     
     //Convert to a colour value
     Uint32 colour = SDL_MapRGB(SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888), 
-        (Uint8)(intensity * 200), 
-        (Uint8)(intensity * 130), 
-        (Uint8)(intensity * 240));
+    (Uint8)(intensity * 200), 
+    (Uint8)(intensity * 130), 
+    (Uint8)(intensity * 240));
     return colour;
 }
 
