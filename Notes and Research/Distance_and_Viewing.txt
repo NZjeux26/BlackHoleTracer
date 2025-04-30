@@ -1,0 +1,24 @@
+ Recommendations to Decrease the Disk's Apparent Size
+If your goal is to reduce how much of the screen the disk fills, try the following adjustments:
+
+✅ Option 1: Zoom Out (Camera-Based)
+c
+Copy
+Edit
+.observer_distance = 150.0; // or 200.0
+This pushes the camera back, making the disk appear smaller.
+
+✅ Option 2: Shrink Disk Itself
+c
+Copy
+Edit
+.accretion_disk_outer_radius = 10.0;  // smaller disk
+You can also increase inner_radius to make the dark region larger (simulate a more compact hot ring).
+
+✅ Option 3: Wider Field of View
+In your projection code:
+
+c
+Copy
+Edit
+double fov = 45.0 * M_PI / 180.0;

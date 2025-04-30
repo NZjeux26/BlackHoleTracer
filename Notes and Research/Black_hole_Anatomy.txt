@@ -1,0 +1,7 @@
+Event horizon: The boundary around a black hole beyond which nothing can escape, not even light. It’s the point of no return.
+Singularity: The core of the black hole where all its mass is concentrated. At this point, density and gravity are thought to be infinitely large, and the laws of physics as we know them cease to operate.
+Accretion disk:  When a black hole pulls in matter from a nearby star or gas cloud, this matter forms a rotating disk around the black hole, known as an accretion disk.
+Particle Jets: Some black holes emit powerful jets of particles and radiation from their poles. These jets can extend for thousands of light-years.
+Hawking radiation: A theoretical prediction by Stephen Hawking that black holes can emit radiation due to quantum effects near the event horizon. This radiation could eventually lead to the evaporation of the black hole over extremely long timescales.
+Gravitational Time dilation: Near a black hole, time passes slower due to its intense gravitational field, as predicted by Einstein’s theory of general relativity.
+Information Paradox: A theoretical dilemma concerning what happens to information about matter that falls into a black hole. It questions whether information is lost or preserved, challenging principles of quantum mechanics....

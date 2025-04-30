@@ -145,7 +145,7 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
 
     //RT parameters
     double base_step_size = Params.schwarzschild_radius * 0.01; //step size for ray tracing
-    int max_steps = 2500; //max number of steps
+    int max_steps = 1000; //max number of steps
     double max_distance = Params.observer_distance * 10;
     double distance_travelled = 0;
 
@@ -191,7 +191,7 @@ void raytrace_blackhole(BlackHoleParams params, SDL_Surface* surface){
     int width = surface->w;
     int height = surface->h;
     double aspect_ratio = (double)width / (double)height;
-    double fov = 30.0 * M_PI / 180.0; //Field of view in radians
+    double fov = 50.0 * M_PI / 180.0; //Field of view in radians
 
     SDL_LockSurface(surface);
     Uint32* pixels = (Uint32*)surface->pixels;
