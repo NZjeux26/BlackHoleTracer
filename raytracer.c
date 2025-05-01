@@ -130,9 +130,9 @@ Uint32 cal_accretion_disk_colour(Vec3 intersection_point, BlackHoleParams params
     
     //Convert to a colour value
     Uint32 colour = SDL_MapRGB(SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888), 
-    (Uint8)(intensity * 200), 
-    (Uint8)(intensity * 130), 
-    (Uint8)(intensity * 240));
+        (Uint8)(intensity * 200), 
+        (Uint8)(intensity * 130), 
+        (Uint8)(intensity * 240));
     return colour;
 }
 
@@ -169,7 +169,7 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
             colour = 0x000000; //black hole colour
             break;
         }
-       
+        //Check if the ray has moved too far
         distance_travelled += step_size;
         if (distance_travelled > max_distance) {
             colour = 0x000000;
@@ -204,7 +204,7 @@ void raytrace_blackhole(BlackHoleParams params, SDL_Surface* surface){
             double screen_x = (2.0 * (x + 0.5) / width - 1.0) * aspect_ratio * tan(fov / 2.0);
             double screen_y = (1.0 - 2.0 * (y + 0.5) / height) * tan(fov / 2.0);
             
-            //Ray origin
+            //Ray origin (comes from the back towards the observer)
             Vec3 ray_origin = {0.0, 0.0, -params.observer_distance}; //ray origin
             //Ray direction
             Vec3 ray_dir = {screen_x, screen_y, 1.0}; //ray direction
