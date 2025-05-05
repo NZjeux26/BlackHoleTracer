@@ -5,45 +5,8 @@
 #include <SDL2/SDL_surface.h>
 #include <SDL2/SDL.h>
 #include "raytracer.h"
+#include "camera.h"
 
-Vec3 vec3_add(Vec3 a, Vec3 b){
-    Vec3 result = {a.x + b.x, a.y + b.y, a.z + b.z};
-    return result;
-}
-
-Vec3 vec3_sub(Vec3 a, Vec3 b){
-    Vec3 result = {a.x - b.x, a.y - b.y, a.z - b.z};
-    return result;
-}
-
-Vec3 vec3_scale(Vec3 v, double s){
-    Vec3 result = {v.x * s, v.y * s, v.z * s};
-    return result;
-}
-
-double vec3_length(Vec3 v){
-    return sqrt(v.x + v.x + v.y * v.y + v.z * v.z);
-}
-
-Vec3 vec3_normalise(Vec3 v){
-    double len = vec3_length(v);
-    if(len == 0) return v;
-    Vec3 result = {v.x / len, v.y / len, v.z / len};
-    return result;
-}
-
-double vec_dot(Vec3 a, Vec3 b){
-    return a.x * b.x + a.y * b.z + a.z * b.z;
-}
-
-Vec3 vec3_cross(Vec3 a, Vec3 b){
-    Vec3 result = {
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x
-    };
-    return result;
-}
 //Function to calculate the ray deflection in a simplified Schwarzschild metric
 bool trace_rayStep(Vec3* pos, Vec3* dir, BlackHoleParams params, double step_size){
     
@@ -141,7 +104,7 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
     Vec3 dir = ray_dir;
     
     //BG colour
-    Uint32 colour = 0x000000; //default black
+    Uint32 colour = 0x001020; //default blue to help with debuging
 
     //RT parameters
     double base_step_size = Params.schwarzschild_radius * 0.01; //step size for ray tracing
@@ -172,7 +135,10 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
         //Check if the ray has moved too far
         distance_travelled += step_size;
         if (distance_travelled > max_distance) {
-            colour = 0x000000;
+            // Simple starfield effect
+            double d = fabs(dir.y) * 0.7 + fabs(dir.x * dir.z) * 0.3;
+            unsigned char intensity = (unsigned char)(d * 64);
+            colour = (intensity << 16) | (intensity << 8) | intensity;
             break;
         }
         //Check if the ray has moved too far
@@ -190,25 +156,46 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
 void raytrace_blackhole(BlackHoleParams params, SDL_Surface* surface){
     int width = surface->w;
     int height = surface->h;
+    //setup camera
     double aspect_ratio = (double)width / (double)height;
     double fov = 50.0 * M_PI / 180.0; //Field of view in radians
+
+    //fixed position camera
+    Vec3 cam_pos = {0.0,0.0, -params.observer_distance};
+    Vec3 cam_target = {0.0,0.0,0.0};
+    Vec3 cam_up = {0.0, 1.0, 0.0};
+
+    Camera cam = make_camera(cam_pos, cam_target, cam_up, fov, aspect_ratio);
+
+    // Print camera details
+    // printf("Camera Position: (%f, %f, %f)\n", cam.position.x, cam.position.y, cam.position.z);
+    // printf("Camera Forward: (%f, %f, %f)\n", cam.forward.x, cam.forward.y, cam.forward.z);
+    // printf("Camera Up: (%f, %f, %f)\n", cam.up.x, cam.up.y, cam.up.z);
+    // printf("Camera Right: (%f, %f, %f)\n", cam.right.x, cam.right.y, cam.right.z);
+
+    double scale = tan(cam.fov / 2.0); // precompute once
 
     SDL_LockSurface(surface);
     Uint32* pixels = (Uint32*)surface->pixels;
 
     memset(pixels, 0, width * height * sizeof(Uint32)); //clear the surface
+    
     //Loop through each pixel in the surface    
     for(int y = 0; y < height; y++){
         for(int x = 0; x < width; x++){
             //Calculate the ray direction
-            double screen_x = (2.0 * (x + 0.5) / width - 1.0) * aspect_ratio * tan(fov / 2.0);
-            double screen_y = (1.0 - 2.0 * (y + 0.5) / height) * tan(fov / 2.0);
-            
+            double screen_x = (2.0 * (x + 0.5) / width - 1.0) * cam.aspect * scale;
+            double screen_y = (1.0 - 2.0 * (y + 0.5) / height) * scale;
+
             //Ray origin (comes from the back towards the observer)
-            Vec3 ray_origin = {0.0, 0.0, -params.observer_distance}; //ray origin
+            Vec3 ray_origin = cam.position; //ray origin
+
             //Ray direction
-            Vec3 ray_dir = {screen_x, screen_y, 1.0}; //ray direction
-            ray_dir = vec3_normalise(ray_dir); //normalise the direction
+            Vec3 ray_dir = vec3_normalise(vec3_add3(
+                vec3_scale(cam.right, screen_x),
+                vec3_scale(cam.up, screen_y),
+                cam.forward
+            ));
             
             //Trace the ray
             Uint32 colour = trace_black_hole_ray(ray_origin, ray_dir, params);
