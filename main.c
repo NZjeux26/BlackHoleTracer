@@ -33,7 +33,7 @@ int main() {
         .schwarzschild_radius = 1.0,
         .accretion_disk_inner_radius = 3.0,
         .accretion_disk_outer_radius = 15.0,
-        .accretion_disk_thickness = 0.1,
+        .accretion_disk_thickness = 0.5,
         .observer_distance = 100.0,
     };
 

@@ -156,12 +156,19 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
 void raytrace_blackhole(BlackHoleParams params, SDL_Surface* surface){
     int width = surface->w;
     int height = surface->h;
+    
     //setup camera
     double aspect_ratio = (double)width / (double)height;
     double fov = 50.0 * M_PI / 180.0; //Field of view in radians
-
-    //fixed position camera
-    Vec3 cam_pos = {0.0,0.0, -params.observer_distance};
+    double theta = 60 * M_PI / 180; //Camera Angle
+    double r = params.observer_distance;
+    
+    //Movable camera
+    Vec3 cam_pos = {
+        0.0,
+        r * sin(theta),   // height
+        -r * cos(theta)   // distance back
+    };
     Vec3 cam_target = {0.0,0.0,0.0};
     Vec3 cam_up = {0.0, 1.0, 0.0};
 
