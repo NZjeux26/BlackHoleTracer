@@ -7,6 +7,148 @@
 #include "raytracer.h"
 #include "camera.h"
 
+BlackHoleParams init_BH_params(double mass, double observer_distance){
+    BlackHoleParams params;
+
+    //core properties
+    params.mass = mass;
+    params.schwarzschild_radius = 2.0 * mass; //In geometric units where G=c=1
+    params.c_squard = 1.0; // Speed of light (in geometric units)
+    params.observer_distance = observer_distance;
+
+    //Accretion Disk
+    params.disk.inner_radius = 3.0 * params.schwarzschild_radius;
+    params.disk.outer_radius = 15 * params.schwarzschild_radius;
+    params.disk.thickness = 0.1 * params.schwarzschild_radius;
+    params.disk.opacity = 0.8;
+    params.disk.temperature_factor = 1.0;
+
+    //intergration params
+    params.dt = 0.1 * params.schwarzschild_radius;
+    params.max_steps = 2000;
+
+    return params;
+}
+
+double calculate_doppler(Vec3 disk_velocity, Vec3 view_direction){
+     // Compute velocity component along viewing direction (positive is receding)
+    double vel_component = vec_dot(disk_velocity, view_direction);
+
+    //TODO Apply relativisitic doppler formula: sqrt((1-v/c)/(1+v/c))
+    // Simplified for low velocities
+    return 1.0 / (1.0 + vel_component);
+}
+
+Vec3 calculate_orbital_velocity(Vec3 pos, double schwarzschild_radius){
+    //Distance from black hole centre
+    double r = vec3_length(pos);
+
+    //Orbital velocity (Keplerian Approx)
+    double v = sqrt(schwarzschild_radius / (2.0 / r));
+
+    //Get unit vector perpendicular to radius in the xy-plane
+    Vec3 radial = {pos.x, pos.y, 0.0};
+    radial = vec3_normalise(radial);
+
+    //Orbital velocity is perpendicular to radial direction
+    Vec3 velocity = {-radial.y, radial.x, 0.0};
+
+    return vec3_scale(velocity, v);
+}
+
+//calculate the colour based on the temp/brightness of the disk
+Uint32 cal_accretion_disk_colour(Vec3 position, Vec3 view_direction, BlackHoleParams params){
+    //distance from the centre in XY plane
+    double r_xy = sqrt(position.x * position.x + position.y * position.y);
+
+    // Calculate temperature/brightness based on distance
+    // T ∝ r^(-3/4) for standard accretion disk
+    double temp_factor = pow(params.disk.inner_radius / r_xy, 0.75);
+    temp_factor *= params.disk.temperature_factor;
+
+    // Calculate orbital velocity and apply Doppler shift
+    Vec3 orbital_velocity = calculate_orbital_velocity(position, params.schwarzschild_radius);
+    double doppler = calculate_doppler(orbital_velocity, view_direction);
+
+    // Calculate gravitational redshift factor
+    // g = sqrt(1 - 2M/r) in Schwarzschild metric
+    double grav_shift = sqrt(1.0 - params.schwarzschild_radius / r_xy);
+    double total_shift = doppler * grav_shift;
+
+    // Apply redshift to temperature (for visualization)
+    double apparent_temp = temp_factor * total_shift;
+    
+     // Convert temperature to RGB (blackbody approximation)
+    // Hotter = more blue/white, cooler = more red/yellow
+    double intensity = fmin(apparent_temp * 3.0, 1.0);
+    
+    //base colours
+    double rvalue = fmin(intensity * 1.2, 1.0);
+    double gvalue = fmin(intensity * 0.9, 1.0);
+    double bvalue = fmin(intensity * 0.6, 1.0);
+    
+    // Blueshift effect (hotter regions are more blue/white)
+    if(total_shift > 1.0){
+        double blue_factor = fmin((total_shift - 1.0) * 5.0, 1.0);
+        bvalue = fmin(bvalue + blue_factor * 0.4, 1.0);
+        gvalue = fmin(gvalue + blue_factor * 0.2, 1.0);
+    }
+    //Convert to a colour value
+    Uint32 colour = SDL_MapRGB(SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888), 
+        (Uint8)(intensity * 200), 
+        (Uint8)(intensity * 130), 
+        (Uint8)(intensity * 240));
+    return colour;
+}
+
+bool accretion_disk_intersection(Vec3 pos, Vec3 dir, BlackHoleParams params, 
+                                double* intersection_distance, Vec3* intersection_point, Vec3* normal){
+    // For simplicity, we'll check intersection with a cylinder and then verify z bounds
+
+    //Project Ray onto XY Plane for disk intersection
+
+    Vec3 pos_xy = {pos.x, pos.y, 0.0};
+    Vec3 dir_xy = {dir.x, dir.y, 0.0};
+    dir_xy = vec3_normalise(dir_xy);
+
+    //handle caes where the ray is parallel to the Z axis
+    if (vec3_length(dir_xy) < 1e-10){
+        //Ray is vertical, check if we're within the disk radius
+        double r = vec3_length(pos_xy);
+        if (r >= params.disk.inner_radius && r <= params.disk.outer_radius) {
+            //Check if we're above/below the disk and moving toward it
+            if((pos.z > 0 && dir.z < 0) || (pos.z < 0 && dir.z > 0)){
+                double t = -pos.z / dir.z;
+                *intersection_distance = t;
+                *intersection_point = vec3_add(pos, vec3_scale(dir, t));
+                *normal = (Vec3){0,0,(pos.z > 0) ? 1.0 : - 1.0}; //normal is in the Z direction
+                return true; //intersection found
+            }
+        }
+        return false;  
+    }
+    //General Case: Ray not vertical
+    //Solve uadratic equation for intersection with cylinder
+
+    //Check intersection with plane
+    if(fabs(dir.z) > 1e-10){
+        double t_plane = -pos.z / dir.z;
+        if(t_plane > 0){
+            Vec3 plane_hit = vec3_add(pos, vec3_scale(dir, t_plane));
+            double r = sqrt(plane_hit.x * plane_hit.x + plane_hit.y * plane_hit.y);     
+            if(r >= params.disk.inner_radius && r <= params.disk.outer_radius){
+                //Check if the ray is moving towards the disk
+                if((pos.z > 0 && dir.z < 0) || (pos.z < 0 && dir.z > 0)){
+                    *intersection_distance = t_plane;
+                    *intersection_point = plane_hit;
+                    *normal = (Vec3){0,0,(pos.z > 0) ? 1.0 : -1.0}; //normal is in the Z direction
+                    return true; //intersection found
+                }
+            }
+        } 
+    }
+}
+
 //Function to calculate the ray deflection in a simplified Schwarzschild metric
 bool trace_rayStep(Vec3* pos, Vec3* dir, BlackHoleParams params, double step_size){
     
@@ -37,66 +179,6 @@ bool trace_rayStep(Vec3* pos, Vec3* dir, BlackHoleParams params, double step_siz
     *pos = vec3_add(*pos, vec3_scale(*dir, step_size));
 
     return true;
-}
-
-bool check_accretion_disk_intersection(Vec3 pos, Vec3 dir, BlackHoleParams params, 
-                                        double* intersection_distance, Vec3* intersection_point){
-        //Accretion disk is in XY plane
-        if(fabs(dir.z) < 1e-10) return false;
-
-        //distance to plane intersection
-        double t = -pos.z / dir.z;
-        if(t < 0) return false;
-
-        //Intersection point
-        Vec3 intersect = vec3_add(pos, vec3_scale(dir, t));
-        double distance_from_centre = sqrt(intersect.x * intersect.x + intersect.y * intersect.y);
-
-        //check if the point is within the accetion disk bounds
-        if(distance_from_centre >= params.accretion_disk_inner_radius &&
-            distance_from_centre <= params.accretion_disk_outer_radius &&
-            fabs(intersect.z) <= params.accretion_disk_thickness){
-                *intersection_distance = t;
-                *intersection_point = intersect;
-                return true;
-        }
-        return false;    
-    }
-//calculate the colour based on the temp/brightness of the disk
-Uint32 cal_accretion_disk_colour(Vec3 intersection_point, BlackHoleParams params){
-    //distance from the centre
-    double r = sqrt(intersection_point.x * intersection_point.x + 
-                    intersection_point.y * intersection_point.y);
-
-    //Cal the angualar velocity of the disk(simple model)
-    //double omega = sqrt(params.mass / (r * r * r)); //this is never used(in this simplfied model)
-
-    //Calculate the reativistic effects(simplified)
-    //Doppler effect based on whether material is moving away to towards the observer
-    double angle = atan2(intersection_point.y, intersection_point.x);
-
-    double doppler_factor;
-
-    if(sin(angle) < 0){
-        doppler_factor = 1.5;
-    }else{
-        doppler_factor = 0.7;
-    }
-
-    doppler_factor += (1.0 + 0.2 * cos(angle));
-
-    double base_intensity = 3.0 * params.schwarzschild_radius / r;
-    double intensity = base_intensity * doppler_factor;
-    
-    //Clamp the intensity to a max value
-    if(intensity > 1.0) intensity = 1.0;
-    
-    //Convert to a colour value
-    Uint32 colour = SDL_MapRGB(SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888), 
-        (Uint8)(intensity * 200), 
-        (Uint8)(intensity * 130), 
-        (Uint8)(intensity * 240));
-    return colour;
 }
 
 Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Params){
