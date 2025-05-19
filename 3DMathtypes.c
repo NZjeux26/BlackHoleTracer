@@ -1,4 +1,4 @@
-#include "types.h"
+#include "3DMathtypes.h"
 #include <math.h>
 
 Vec3 vec3_add(Vec3 a, Vec3 b){
@@ -42,4 +42,12 @@ Vec3 vec3_cross(Vec3 a, Vec3 b){
         a.x * b.y - a.y * b.x
     };
     return result;
+}
+
+Vec3 vec3_reflect(Vec3 i, Vec3 normal) {
+   normal = vec3_normalise(normal);
+   double dot = vec_dot(i, normal);
+
+   Vec3 scaled_normal = vec3_scale(normal, 2.0 * dot);
+   return vec3_sub(i, scaled_normal);
 }

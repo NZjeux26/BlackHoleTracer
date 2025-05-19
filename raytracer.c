@@ -136,6 +136,7 @@ bool accretion_disk_intersection(Vec3 pos, Vec3 dir, BlackHoleParams params,
         if(t_plane > 0){
             Vec3 plane_hit = vec3_add(pos, vec3_scale(dir, t_plane));
             double r = sqrt(plane_hit.x * plane_hit.x + plane_hit.y * plane_hit.y);     
+           
             if(r >= params.disk.inner_radius && r <= params.disk.outer_radius){
                 //Check if the ray is moving towards the disk
                 if((pos.z > 0 && dir.z < 0) || (pos.z < 0 && dir.z > 0)){
@@ -147,88 +148,204 @@ bool accretion_disk_intersection(Vec3 pos, Vec3 dir, BlackHoleParams params,
             }
         } 
     }
-}
+
+    // 2. Check intersection with the inner/outer cylindrical boundaries
+    // For both inner and outer radii
+    
+    double radii[2] = {params.disk.inner_radius, params.disk.outer_radius};
+
+    for (int i = 0; i < 2; i++){
+        double radius = radii[i];
+
+        //Quadratric equation coefficents for cylinder intersection
+        double a = dir_xy.x * dir_xy.x + dir_xy.y * dir_xy.y;
+        double b = 2.0 * (pos_xy.x * dir_xy.x + pos_xy.y * dir_xy.y);
+        double c = pos_xy.x * pos_xy.x + pos_xy.y * pos_xy.y - radius * radius;
+
+        double discriminant = b * b - 4 * a * c;
+
+        if (discriminant >= 0){
+            // We have intersection with the infinite cylinder
+            double t1 = (-b - sqrt(discriminant) / (2.0 * a));
+            double t2 = (-b + sqrt(discriminant) / (2.0 * a));
+            
+            // Use the closest positive intersection
+            double t = (t1 > 0) ? t1 : ((t2 > 0)) ? t2 : -1.0;
+
+            if (t > 0){
+                Vec3 cylinder_hit = vec3_add(pos, vec3_scale(dir, t));
+
+                // Check if the intersection is within the z-bounds of the disk
+                if (fabs(cylinder_hit.z) <= params.disk.thickness) {
+                    // If this is closer than any previously found intersection
+                    if (*intersection_distance < 0 || t < *intersection_distance) {
+                        *intersection_distance = t;
+                        *intersection_point = cylinder_hit;
+                        
+                        // Normal points outward for outer radius, inward for inner radius
+                        Vec3 radial = {cylinder_hit.x, cylinder_hit.y, 0.0};
+                        radial = vec3_normalise(radial);
+                        if (i == 0) { // Inner radius - normal points inward
+                            radial = vec3_scale(radial, -1.0);
+                        }
+                        *normal = radial;
+                        return true;
+                    }//if4   
+                }//if3 
+            }//if2
+        }//if1
+    }//for
+
+    //3 checks of intersection with the top and bottom faces of the disk
+    
+    double z_faces[2] = {params.disk.thickness, -params.disk.thickness};
+
+    for(int i = 0; i < 2; i++){
+        double z_face = z_faces[i];
+
+        //check if the ray is moving toward face
+        if((z_face > pos.z && dir.z > 0) || (z_face < pos.z && dir.z < 0)){
+            double t = (z_face - pos.z) / dir.z;
+
+            if(t > 0){
+                Vec3 face_hit = vec3_add(pos, vec3_scale(dir, t));
+                double r = sqrt(face_hit.x * face_hit.x + face_hit.y * face_hit.y);
+
+                if(r >= params.disk.inner_radius && r <=params.disk.outer_radius){
+                    if(*intersection_distance < 0 || t < *intersection_distance){
+                        *intersection_distance = t;
+                        *intersection_point = face_hit;
+                        *normal = (Vec3){0,0,(i == 0) ? 1.0 : -1.0};
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return *intersection_distance > 0;
+}//function
 
 //Function to calculate the ray deflection in a simplified Schwarzschild metric
-bool trace_rayStep(Vec3* pos, Vec3* dir, BlackHoleParams params, double step_size){
+bool trace_rayStep(RayState* ray, BlackHoleParams params){
     
     //Distance from the black hold centre
-    Vec3 to_centre = vec3_scale(*pos, -1.0);
-    double r = vec3_length(to_centre);
+    double r = vec3_length(ray->position);
 
     //check if the ray has crossed the EH
-    if(r <= params.schwarzschild_radius) return false; //return false if it has
-
-    //Calculate the gravitational lensing/deflection
-    //Simplfied approx from AI for geodesic equation
-    double deflection_factor = 2.5 * params.schwarzschild_radius / (r * r);
+    if(r <= params.schwarzschild_radius) {
+        ray->intensity = 0.0; //set intensity to zero
+        return false; //return false if it has
+    }
 
     //direction from pos to the black hole centre
-    Vec3 radial_dir = vec3_normalise(to_centre);
+    Vec3 radial_dir = vec3_normalise(ray->position);
 
     //component of velocity perpendicular to radial direction
-    double parallel_component = vec_dot(*dir, radial_dir);
-    Vec3 parallel_vector = vec3_scale(radial_dir, parallel_component);
-    Vec3 perpendicular_vector = vec3_sub(*dir, parallel_vector);
+    double parallel_component = vec_dot(ray->direction, radial_dir);
 
-    //Apply the gravitational deflection to the ray
-    Vec3 deflection_perpendicular = vec3_scale(perpendicular_vector, 1.0 - deflection_factor);
+    //calculate the gravitational deflection strength
+    double deflection_fator = 1.5 * params.schwarzschild_radius / (r * r);
+
+    //Apply gravitational deflection - pull direction toward black hole
+    Vec3 deflection = vec3_scale(radial_dir, -deflection_fator);
+    ray->direction = vec3_normalise(vec3_add(ray->direction, deflection));
+
+    //alculate redshift
+    // g = sqrt(1 - 2M/r) for static observer in Schwarzschild metric
+    double redshift_factor = sqrt(1.0 - params.schwarzschild_radius / r);
+    ray->redshift *= redshift_factor;
     
-    *dir = vec3_normalise(vec3_add(parallel_vector, deflection_perpendicular));
+    ray->intensity *= (1.0 - params.dt / (r * r)); //attenuate intensity based on distance
 
-    *pos = vec3_add(*pos, vec3_scale(*dir, step_size));
-
+    ray->position = vec3_add(ray->position, vec3_scale(ray->direction, params.dt)); //move the ray forward
     return true;
 }
 
 Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Params){
-    Vec3 pos = ray_origin;
-    Vec3 dir = ray_dir;
-    
     //BG colour
     Uint32 colour = 0x001020; //default blue to help with debuging
+    
+    RayState ray;
+    ray.position = ray_origin;
+    ray.direction = ray_dir;
+    ray.redshift = 1.0; //initial redshift
+    ray.intensity = 1.0; //initial intensity
+    
+    double accumulated_opacity = 0.0;
 
-    //RT parameters
-    double base_step_size = Params.schwarzschild_radius * 0.01; //step size for ray tracing
-    int max_steps = 1000; //max number of steps
-    double max_distance = Params.observer_distance * 10;
-    double distance_travelled = 0;
-
-    for (int step = 0; step < max_steps; step++){
-        double intersection_distance = 0.0;
-        Vec3 intersection_point = {0.0, 0.0, 0.0};
+    for (int step = 0; step < Params.max_steps && accumulated_opacity < 0.99; step++){
+        double distance = -1.0;
+        Vec3 hit_point = {0.0, 0.0, 0.0};
+        Vec3 normal = {0.0, 0.0, 0.0};
         
-        if(check_accretion_disk_intersection(pos, dir, Params, &intersection_distance, &intersection_point)){
-            //Calculate the colour based on the intersection point
-            colour = cal_accretion_disk_colour(intersection_point, Params);
-            break;
+        if(accretion_disk_intersection(ray.position, ray.direction, Params, &distance, &hit_point, &normal)){
+            
+            //We hit the disk
+
+            //Move to the hit point
+            ray.position = hit_point;
+
+            Uint32 disk_colour = cal_accretion_disk_colour(hit_point, ray.direction, Params);
+
+            //Apply acumlated redshift to the colour
+            Uint8 r = ((disk_colour >> 16) & 0xFF);
+            Uint8 g = ((disk_colour >> 8) & 0xFF);
+            Uint8 b = (disk_colour & 0xFF);
+
+            //apply redshift
+            r = (Uint8)(r * ray.redshift);
+            g = (Uint8)(g * ray.redshift);
+            b = (Uint8)(b * ray.redshift);
+            //apply intensity
+            r = (Uint8)(r * ray.intensity);
+            g = (Uint8)(g * ray.intensity);
+            b = (Uint8)(b * ray.intensity);
+
+            //calculate this segments contribution based on opacity
+            double segment_opacity = Params.disk.opacity * (1.0 - accumulated_opacity);
+            accumulated_opacity += segment_opacity;
+
+            //blend accumulated colour with the disk colour
+            Uint8 curr_r = ((colour >> 16) & 0xFF);
+            Uint8 curr_g = ((colour >> 8) & 0xFF);
+            Uint8 curr_b = (colour & 0xFF);
+            
+            curr_r = (Uint8)(curr_r * (1.0 - segment_opacity) + r * segment_opacity);
+            curr_g = (Uint8)(curr_g * (1.0 - segment_opacity) + g * segment_opacity);
+            curr_b = (Uint8)(curr_b * (1.0 - segment_opacity) + b * segment_opacity);
+
+            colour = SDL_MapRGB(SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888), 
+                curr_r, curr_g, curr_b); //Claude has colour = = (r << 16) | (g << 8) | b;
+            
+             // Calculate reflection angle - simplified for now
+            double reflection_factor = 0.3; //reflection factor
+            
+            // Adjust ray for partial reflection/transmission
+            Vec3 reflection = vec3_reflect(ray.direction, normal); //niether of these are used
+
+            //Blend between perfect reflection and transmission
+            ray.direction = vec3_normalise(
+                vec3_add(
+                    vec3_scale(reflection, reflection_factor),
+                    vec3_scale(ray.direction, 1.0 - reflection_factor)
+                )
+            );
+
+            ray.intensity *= (1.0 - Params.disk.opacity); //attenuate intensity based on reflection
+
+            ray.position = vec3_add(ray.position, vec3_scale(ray.direction, distance)); //move the ray forward
         }
-        // Adaptive step size: shrinks near BH to capture lensing, grows far away for speed
-        double r = vec3_length(pos);
-        double epsilon = 1e-6;
-        double step_size = base_step_size * (1.0 + (Params.schwarzschild_radius / (r + epsilon)) * (Params.schwarzschild_radius / (r + epsilon)));
-        
-        //Move ray forward and apply gravitional lensing
-        if(!trace_rayStep(&pos, &dir, Params, step_size)){
+        if(!trace_rayStep(&ray, Params)){
             //Ray has crossed the event horizon
-            colour = 0x000000; //black hole colour
             break;
         }
-        //Check if the ray has moved too far
-        distance_travelled += step_size;
-        if (distance_travelled > max_distance) {
-            // Simple starfield effect
-            double d = fabs(dir.y) * 0.7 + fabs(dir.x * dir.z) * 0.3;
-            unsigned char intensity = (unsigned char)(d * 64);
-            colour = (intensity << 16) | (intensity << 8) | intensity;
+
+        if(vec3_length(ray.position) > Params.observer_distance * 10){
+            //claude has adding starfield here, not adding for now.
+
+            //Ray has moved outside the observer distance
             break;
         }
-        //Check if the ray has moved too far
-        // if(vec3_length(vec3_sub(pos, ray_origin)) > max_distance){
-        //     //Ray has moved too far
-        //     colour = 0x000000; //black hole colour
-        //     break;
-        // }
     }
     return colour;
 }
@@ -242,7 +359,7 @@ void raytrace_blackhole(BlackHoleParams params, SDL_Surface* surface){
     //setup camera
     double aspect_ratio = (double)width / (double)height;
     double fov = 50.0 * M_PI / 180.0; //Field of view in radians
-    double theta = 60 * M_PI / 180; //Camera Angle
+    double theta = 20 * M_PI / 180; //Camera Angle
     double r = params.observer_distance;
     
     //Movable camera

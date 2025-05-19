@@ -28,14 +28,7 @@ int main() {
 
     SDL_Surface* surface = SDL_CreateRGBSurface(0, width, height, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000); //Co-Pilot wanted 0
 
-    BlackHoleParams params = {
-        .mass = 1.0,
-        .schwarzschild_radius = 1.0,
-        //.accretion_disk_inner_radius = 3.0,
-        //.accretion_disk_outer_radius = 15.0,
-        //.accretion_disk_thickness = 0.5,
-        .observer_distance = 100.0,
-    };
+    BlackHoleParams params = init_BH_params(1.0, 40.0); // Mass and distance from black hole
 
     printf("Starting raytracing.....\n");
     clock_t start_time, end_time;

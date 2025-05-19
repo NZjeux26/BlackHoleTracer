@@ -1,7 +1,7 @@
 #ifndef BLACKHOLEMATH_H
 #define BLACKHOLEMATH_H
 
-#include "types.h"
+#include "3DMathtypes.h"
 #include <math.h>
 
 typedef struct {
