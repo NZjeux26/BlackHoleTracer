@@ -19,12 +19,12 @@ BlackHoleParams init_BH_params(double mass, double observer_distance){
     //Accretion Disk
     params.disk.inner_radius = 3.0 * params.schwarzschild_radius;
     params.disk.outer_radius = 15 * params.schwarzschild_radius;
-    params.disk.thickness = 0.1 * params.schwarzschild_radius;
-    params.disk.opacity = 0.8;
+    params.disk.thickness = 0.2 * params.schwarzschild_radius;
+    params.disk.opacity = 0.7;
     params.disk.temperature_factor = 1.0;
 
     //intergration params
-    params.dt = 0.1 * params.schwarzschild_radius;
+    params.dt = 0.05 * params.schwarzschild_radius;
     params.max_steps = 1000;
 
     return params;
@@ -72,6 +72,11 @@ Uint32 cal_accretion_disk_colour(Vec3 position, Vec3 view_direction, BlackHolePa
     double temp_factor = pow(params.disk.inner_radius / r_xy, 0.75);
     temp_factor *= params.disk.temperature_factor;
 
+    // // Add temperature variation based on angle (creates disk features)
+    // double angle = atan2(position.y, position.x);
+    // double angle_var = 0.1 * sin(6.0 * angle) + 0.05 * sin(12.0 * angle + 0.7);
+    // temp_factor *= (1.0 + angle_var);
+
     // Calculate orbital velocity and apply Doppler shift
     Vec3 orbital_velocity = calculate_orbital_velocity(position, params.schwarzschild_radius);
     double doppler = calculate_doppler(orbital_velocity, view_direction);
@@ -88,16 +93,33 @@ Uint32 cal_accretion_disk_colour(Vec3 position, Vec3 view_direction, BlackHolePa
     // Hotter = more blue/white, cooler = more red/yellow
     double intensity = fmin(apparent_temp * 3.0, 1.0);
     
-    //base colours
-    double rvalue = fmin(intensity * 1.2, 1.0);
-    double gvalue = fmin(intensity * 0.9, 1.0);
-    double bvalue = fmin(intensity * 0.6, 1.0);
+    double rvalue, gvalue, bvalue;
+    if(apparent_temp < 0.6){
+         // Cooler regions (reddish)
+        rvalue = fmin(intensity * 2.0, 1.0);
+        gvalue = fmin(intensity * 0.7, 1.0);
+        bvalue = fmin(intensity * 0.4, 1.0);
+    }
+    else{
+        //Hotter Regions
+        rvalue = fmin(intensity * 1.0, 1.0);
+        gvalue = fmin(intensity * 1.0, 1.0);
+        bvalue = fmin(intensity * 1.2, 1.0);
+    }
+   
     
     // Blueshift effect (hotter regions are more blue/white)
     if(total_shift > 1.0){
         double blue_factor = fmin((total_shift - 1.0) * 5.0, 1.0);
-        bvalue = fmin(bvalue + blue_factor * 0.4, 1.0);
-        gvalue = fmin(gvalue + blue_factor * 0.2, 1.0);
+        bvalue = fmin(bvalue + blue_factor * 0.5, 1.0);
+        gvalue = fmin(gvalue + blue_factor * 0.3, 1.0);
+    }
+
+    if(total_shift < 1.0){
+        double red_factor = fmin((1.0 - total_shift) * 5.0, 1.0);
+        rvalue = fmin(rvalue + red_factor * 0.4, 1.0);
+        gvalue = fmin(gvalue - red_factor * 0.2, fmax(0.0, gvalue));
+        bvalue = fmin(bvalue - red_factor * 0.3, fmax(0.0, bvalue));
     }
     //Convert to a colour value
     Uint32 colour = SDL_MapRGB(format, 
@@ -236,22 +258,31 @@ bool trace_rayStep(RayState* ray, BlackHoleParams params){
     double r = vec3_length(ray->position);
 
     //check if the ray has crossed the EH
-    if(r <= params.schwarzschild_radius + 1e-6) {
+    if(r <= params.schwarzschild_radius * 1.01) {
         ray->intensity = 0.0; //set intensity to zero
         return false; //return false if it has
     }
 
     //direction from pos to the black hole centre
-    Vec3 radial_dir = vec3_normalise(ray->position);
+    Vec3 radial_dir = vec3_scale(ray->position, -1.0 / r);//check this
 
-    //component of velocity perpendicular to radial direction
-    double parallel_component = vec_dot(ray->direction, radial_dir);
+    // Calculate the gravitational deflection based on Schwarzschild metric
+    // Using a more accurate deflection formula based on GR
+    double impact_parameter = vec3_length(vec3_cross(ray->position, ray->direction));
+    double rs = params.schwarzschild_radius;
 
     //calculate the gravitational deflection strength
-    double deflection_fator = 1.5 * params.schwarzschild_radius / (r * r);
+    double deflection_factor = 1.5 * rs / (r * r);
+
+    // Stronger deflection near the photon sphere (approx. 1.5 * schwarzschild_radius)
+    if(r < 3.0 * rs){
+        //enhanced deflection near photon sphere
+        double photon_sphere_factor = 1.0 + 2.0 * rs / (r - 1.5 * rs);
+        deflection_factor *= fmin(photon_sphere_factor, 10.0);//limit the max deflection
+    }
 
     //Apply gravitational deflection - pull direction toward black hole
-    Vec3 deflection = vec3_scale(radial_dir, -deflection_fator);
+    Vec3 deflection = vec3_scale(radial_dir, deflection_factor);//this was -deflection
     ray->direction = vec3_normalise(vec3_add(ray->direction, deflection));
 
     //alculate redshift
@@ -259,13 +290,20 @@ bool trace_rayStep(RayState* ray, BlackHoleParams params){
     double redshift_factor = sqrt(1.0 - params.schwarzschild_radius / r);
     ray->redshift *= redshift_factor;
     
-    ray->intensity *= (1.0 - params.dt / (r * r)); //attenuate intensity based on distance
-
-    ray->position = vec3_add(ray->position, vec3_scale(ray->direction, params.dt)); //move the ray forward
+    ray->intensity *= (1.0 - params.dt / (r * r + 1.0)); //attenuate intensity based on distance
+    
+    double adaptive_dt = params.dt * fmin(1.0, r / (5.0 * params.schwarzschild_radius));
+    ray->position = vec3_add(ray->position, vec3_scale(ray->direction, adaptive_dt)); //move the ray forward
+    
     return true;
 }
 
 Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Params){
+    static SDL_PixelFormat* format = NULL;
+    if (!format) {
+        format = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888);
+    }
+
     //BG colour
     Uint32 colour = 0x001020; //default blue to help with debuging
     
@@ -275,7 +313,27 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
     ray.redshift = 1.0; //initial redshift
     ray.intensity = 1.0; //initial intensity
     
+    // Calculate impact parameter for this ray
+    Vec3 h = vec3_cross(ray_origin,ray_dir); //Angular Momentum
+    double impact_params = vec3_length(h);
+    double rs = Params.schwarzschild_radius;
+
+    //track if we've hit special zone
+    bool hit_photon_ring = false;
+    bool hit_ering = false;
     double accumulated_opacity = 0.0;
+    
+     // Check for Einstein ring effect (characteristic impact parameter)
+    // Einstein ring appears at approximately 2.6-3.0 * rs
+    if(fabs(impact_params - 2.8 * rs) < 0.2 * rs){
+        hit_ering = true;
+    }
+
+    if(fabs(impact_params - 2.6 * rs) < 0.08 * rs){
+        hit_photon_ring = true;
+    }
+
+    bool hit_disk = false;
 
     for (int step = 0; step < Params.max_steps && accumulated_opacity < 0.99; step++){
         double distance = -1.0;
@@ -283,9 +341,8 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
         Vec3 normal = {0.0, 0.0, 0.0};
         
         if(accretion_disk_intersection(ray.position, ray.direction, Params, &distance, &hit_point, &normal)){
-            
             //We hit the disk
-
+            hit_disk = true;
             //Move to the hit point
             ray.position = hit_point;
 
@@ -318,10 +375,9 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
             curr_g = (Uint8)(curr_g * (1.0 - segment_opacity) + g * segment_opacity);
             curr_b = (Uint8)(curr_b * (1.0 - segment_opacity) + b * segment_opacity);
 
-            colour = SDL_MapRGB(SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888), 
-                curr_r, curr_g, curr_b); //Claude has colour = = (r << 16) | (g << 8) | b;
+            colour = SDL_MapRGB(format, curr_r, curr_g, curr_b); //Claude has colour = = (r << 16) | (g << 8) | b;
             
-             // Calculate reflection angle - simplified for now
+            // Calculate reflection angle - simplified for now
             double reflection_factor = 0.3; //reflection factor
             
             // Adjust ray for partial reflection/transmission
@@ -337,8 +393,8 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
 
             ray.intensity *= (1.0 - Params.disk.opacity); //attenuate intensity based on reflection
 
-            ray.position = vec3_add(ray.position, vec3_scale(ray.direction, distance)); //move the ray forward
-            //ray.position = vec3_add(ray.position, vec3_scale(normal, 1e-6));
+            //ray.position = vec3_add(ray.position, vec3_scale(ray.direction, distance)); //move the ray forward
+            ray.position = vec3_add(ray.position, vec3_scale(normal, 1e-4));//move ray slightly forward
         }   
         if(!trace_rayStep(&ray, Params)){
             //Ray has crossed the event horizon
@@ -352,6 +408,33 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
             break;
         }
     }
+    if(hit_ering && !hit_disk){
+        Uint8 r = ((colour >> 16) & 0xFF);
+        Uint8 g = ((colour >> 8) & 0xFF);
+        Uint8 b = (colour & 0xFF);
+        
+        // Light blue glow for Einstein ring
+        r = (Uint8)fmin(r + 60, 255);
+        g = (Uint8)fmin(g + 110, 255);
+        b = (Uint8)fmin(b + 170, 255);
+        
+        colour = SDL_MapRGB(format, r, g, b);
+    }
+
+    // Apply photon ring effect
+    if (hit_photon_ring && !hit_disk) {
+        // Create very bright photon ring
+        Uint8 r = ((colour >> 16) & 0xFF);
+        Uint8 g = ((colour >> 8) & 0xFF);
+        Uint8 b = (colour & 0xFF);
+        
+        // Bright yellow ring for photon ring
+        r = (Uint8)fmin(r + 180, 255);
+        g = (Uint8)fmin(g + 170, 255);
+        b = (Uint8)fmin(b + 120, 255);
+        
+        colour = SDL_MapRGB(format, r, g, b);
+    }
     return colour;
 }
 
@@ -363,8 +446,8 @@ void raytrace_blackhole(BlackHoleParams params, SDL_Surface* surface){
     
     //setup camera
     double aspect_ratio = (double)width / (double)height;
-    double fov = 50.0 * M_PI / 180.0; //Field of view in radians
-    double theta = 10 * M_PI / 180; //Camera Angle
+    double fov = 40.0 * M_PI / 180.0; //Field of view in radians
+    double theta = 20 * M_PI / 180.0; //Camera Angle
     double r = params.observer_distance;
     
     //Movable camera
