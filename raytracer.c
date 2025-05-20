@@ -25,18 +25,19 @@ BlackHoleParams init_BH_params(double mass, double observer_distance){
 
     //intergration params
     params.dt = 0.1 * params.schwarzschild_radius;
-    params.max_steps = 2000;
+    params.max_steps = 1000;
 
     return params;
 }
 
 double calculate_doppler(Vec3 disk_velocity, Vec3 view_direction){
      // Compute velocity component along viewing direction (positive is receding)
-    double vel_component = vec_dot(disk_velocity, view_direction);
+    double v = vec_dot(disk_velocity, view_direction);
 
     //TODO Apply relativisitic doppler formula: sqrt((1-v/c)/(1+v/c))
-    // Simplified for low velocities
-    return 1.0 / (1.0 + vel_component);
+    if (v > 0.99) v = 0.99;  // prevent division by zero or near-zero
+    if (v < -0.99) v = -0.99;
+    return sqrt((1 - v) / (1 + v));
 }
 
 Vec3 calculate_orbital_velocity(Vec3 pos, double schwarzschild_radius){
@@ -58,9 +59,14 @@ Vec3 calculate_orbital_velocity(Vec3 pos, double schwarzschild_radius){
 
 //calculate the colour based on the temp/brightness of the disk
 Uint32 cal_accretion_disk_colour(Vec3 position, Vec3 view_direction, BlackHoleParams params){
+    static SDL_PixelFormat* format = NULL;
+    if(!format){
+        format = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888);
+    }
     //distance from the centre in XY plane
     double r_xy = sqrt(position.x * position.x + position.y * position.y);
-
+    if (r_xy < 1e-6) r_xy = 1e-6;
+    
     // Calculate temperature/brightness based on distance
     // T ∝ r^(-3/4) for standard accretion disk
     double temp_factor = pow(params.disk.inner_radius / r_xy, 0.75);
@@ -74,7 +80,7 @@ Uint32 cal_accretion_disk_colour(Vec3 position, Vec3 view_direction, BlackHolePa
     // g = sqrt(1 - 2M/r) in Schwarzschild metric
     double grav_shift = sqrt(1.0 - params.schwarzschild_radius / r_xy);
     double total_shift = doppler * grav_shift;
-
+    
     // Apply redshift to temperature (for visualization)
     double apparent_temp = temp_factor * total_shift;
     
@@ -94,10 +100,10 @@ Uint32 cal_accretion_disk_colour(Vec3 position, Vec3 view_direction, BlackHolePa
         gvalue = fmin(gvalue + blue_factor * 0.2, 1.0);
     }
     //Convert to a colour value
-    Uint32 colour = SDL_MapRGB(SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888), 
-        (Uint8)(intensity * 200), 
-        (Uint8)(intensity * 130), 
-        (Uint8)(intensity * 240));
+    Uint32 colour = SDL_MapRGB(format, 
+         (Uint8)(rvalue * 255.0), 
+         (Uint8)(gvalue * 255.0), 
+         (Uint8)(bvalue * 255.0));
     return colour;
 }
 
@@ -106,7 +112,6 @@ bool accretion_disk_intersection(Vec3 pos, Vec3 dir, BlackHoleParams params,
     // For simplicity, we'll check intersection with a cylinder and then verify z bounds
 
     //Project Ray onto XY Plane for disk intersection
-
     Vec3 pos_xy = {pos.x, pos.y, 0.0};
     Vec3 dir_xy = {dir.x, dir.y, 0.0};
     dir_xy = vec3_normalise(dir_xy);
@@ -151,7 +156,6 @@ bool accretion_disk_intersection(Vec3 pos, Vec3 dir, BlackHoleParams params,
 
     // 2. Check intersection with the inner/outer cylindrical boundaries
     // For both inner and outer radii
-    
     double radii[2] = {params.disk.inner_radius, params.disk.outer_radius};
 
     for (int i = 0; i < 2; i++){
@@ -166,8 +170,8 @@ bool accretion_disk_intersection(Vec3 pos, Vec3 dir, BlackHoleParams params,
 
         if (discriminant >= 0){
             // We have intersection with the infinite cylinder
-            double t1 = (-b - sqrt(discriminant) / (2.0 * a));
-            double t2 = (-b + sqrt(discriminant) / (2.0 * a));
+            double t1 = (-b - sqrt(discriminant)) / (2.0 * a);
+            double t2 = (-b + sqrt(discriminant)) / (2.0 * a);
             
             // Use the closest positive intersection
             double t = (t1 > 0) ? t1 : ((t2 > 0)) ? t2 : -1.0;
@@ -232,7 +236,7 @@ bool trace_rayStep(RayState* ray, BlackHoleParams params){
     double r = vec3_length(ray->position);
 
     //check if the ray has crossed the EH
-    if(r <= params.schwarzschild_radius) {
+    if(r <= params.schwarzschild_radius + 1e-6) {
         ray->intensity = 0.0; //set intensity to zero
         return false; //return false if it has
     }
@@ -334,7 +338,8 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
             ray.intensity *= (1.0 - Params.disk.opacity); //attenuate intensity based on reflection
 
             ray.position = vec3_add(ray.position, vec3_scale(ray.direction, distance)); //move the ray forward
-        }
+            //ray.position = vec3_add(ray.position, vec3_scale(normal, 1e-6));
+        }   
         if(!trace_rayStep(&ray, Params)){
             //Ray has crossed the event horizon
             break;
@@ -359,7 +364,7 @@ void raytrace_blackhole(BlackHoleParams params, SDL_Surface* surface){
     //setup camera
     double aspect_ratio = (double)width / (double)height;
     double fov = 50.0 * M_PI / 180.0; //Field of view in radians
-    double theta = 20 * M_PI / 180; //Camera Angle
+    double theta = 10 * M_PI / 180; //Camera Angle
     double r = params.observer_distance;
     
     //Movable camera

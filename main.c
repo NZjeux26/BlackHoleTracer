@@ -8,7 +8,7 @@
 
 int main() {
     int width = 1200;
-    int height = 800;
+    int height = 900;
 
     SDL_Window* window = SDL_CreateWindow("Black Hole Raytracer", 
                                   SDL_WINDOWPOS_UNDEFINED, 
@@ -28,7 +28,7 @@ int main() {
 
     SDL_Surface* surface = SDL_CreateRGBSurface(0, width, height, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000); //Co-Pilot wanted 0
 
-    BlackHoleParams params = init_BH_params(1.0, 40.0); // Mass and distance from black hole
+    BlackHoleParams params = init_BH_params(1.0, 100.0); // Mass and distance from black hole
 
     printf("Starting raytracing.....\n");
     clock_t start_time, end_time;
@@ -83,6 +83,7 @@ int main() {
     SDL_FreeSurface(surface);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    //SDL_FreeFormat(format);
     SDL_Quit();
     return 0;
 }
