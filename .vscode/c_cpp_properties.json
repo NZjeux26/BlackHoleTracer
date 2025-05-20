@@ -5,8 +5,11 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "/opt/homebrew/opt/sdl2",
+                "/opt/homebrew/opt/sdl2_image/include",
                 "/opt/homebrew/Cellar/sdl2/2.32.4/include",
-                "${workspaceFolder}"
+                "/opt/homebrew/Cellar/sdl2/2.32.4/include/SDL2",
+                "${workspaceFolder}",
+                "/opt/homebrew/Cellar/sdl2_image/2.8.8/include/SDL2"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/clang",

@@ -11,7 +11,7 @@ Camera make_camera(Vec3 position, Vec3 target, Vec3 world_up, double fov, double
     cam.forward = vec3_normalise(vec3_sub(target, position));
 
     // If forward is nearly parallel to world_up, pick an alternative up vector
-    if (fabs(vec_dot(cam.forward, world_up)) > 0.999) {
+    if (fabs(vec3_dot(cam.forward, world_up)) > 0.999) {
         world_up = (Vec3){1.0, 0.0, 0.0}; // Switch to X-axis as new up
     }
 

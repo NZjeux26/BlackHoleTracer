@@ -31,7 +31,7 @@ Vec3 vec3_normalise(Vec3 v){
     return result;
 }
 
-double vec_dot(Vec3 a, Vec3 b){
+double vec3_dot(Vec3 a, Vec3 b){
     return a.x * b.x + a.y * b.z + a.z * b.z;
 }
 
@@ -46,7 +46,7 @@ Vec3 vec3_cross(Vec3 a, Vec3 b){
 
 Vec3 vec3_reflect(Vec3 i, Vec3 normal) {
    normal = vec3_normalise(normal);
-   double dot = vec_dot(i, normal);
+   double dot = vec3_dot(i, normal);
 
    Vec3 scaled_normal = vec3_scale(normal, 2.0 * dot);
    return vec3_sub(i, scaled_normal);

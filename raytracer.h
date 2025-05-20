@@ -7,8 +7,8 @@
 #include <stdbool.h>
 #include "blackholemath.h"
 #include "3DMathtypes.h"
-#include <SDL2/SDL_surface.h>
-#include <SDL2/SDL.h>
+#include <SDL_surface.h>
+#include <SDL.h>
 
 typedef struct{
     Vec3 position; //current pos
