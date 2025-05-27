@@ -2,6 +2,7 @@
 #define BLACKHOLEMATH_H
 
 #include "3DMathtypes.h"
+#include <sys/types.h>
 #include <math.h>
 
 typedef struct {
@@ -21,5 +22,7 @@ typedef struct {
     double dt;  // Integration time step
     int max_steps;  // Maximum integration steps
     double observer_distance; // Distance of camera from black hole
+    //Spin parameter
+    //
 } BlackHoleParams;
 #endif // BLACKHOLEMATH_H

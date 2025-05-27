@@ -27,4 +27,5 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
 BlackHoleParams init_BH_params(double mass, double observer_distance);
 double calculate_doppler(Vec3 disk_velocity, Vec3 view_direction);
 Vec3 calculate_orbital_velocity(Vec3 position, double schwarzschild_radius);
+
 #endif // RAYTRACER_H

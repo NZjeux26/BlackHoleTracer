@@ -9,7 +9,8 @@
                 "/opt/homebrew/Cellar/sdl2/2.32.4/include",
                 "/opt/homebrew/Cellar/sdl2/2.32.4/include/SDL2",
                 "${workspaceFolder}",
-                "/opt/homebrew/Cellar/sdl2_image/2.8.8/include/SDL2"
+                "/opt/homebrew/Cellar/sdl2_image/2.8.8/include/SDL2",
+                "/opt/homebrew/Cellar/glew/2.2.0_1/include"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/clang",

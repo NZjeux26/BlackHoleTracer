@@ -17,10 +17,10 @@ BlackHoleParams init_BH_params(double mass, double observer_distance){
     params.observer_distance = observer_distance;
 
     //Accretion Disk
-    params.disk.inner_radius = 3.83 * params.schwarzschild_radius;
+    params.disk.inner_radius = 3.0 * params.schwarzschild_radius;
     params.disk.outer_radius = 15 * params.schwarzschild_radius;
     params.disk.thickness = 0.2 * params.schwarzschild_radius;
-    params.disk.opacity = 0.7;
+    params.disk.opacity = 0.2;
     params.disk.temperature_factor = 1.0;
 
     //intergration params
@@ -358,65 +358,65 @@ Uint32 trace_black_hole_ray(Vec3 ray_origin, Vec3 ray_dir, BlackHoleParams Param
         Vec3 hit_point = {0.0, 0.0, 0.0};
         Vec3 normal = {0.0, 0.0, 0.0};
         
-        if(accretion_disk_intersection(ray.position, ray.direction, Params, &distance, &hit_point, &normal)){
-            //We hit the disk
-            hit_disk = true;
-            num_disk_hits++;
+        // if(accretion_disk_intersection(ray.position, ray.direction, Params, &distance, &hit_point, &normal)){
+        //     //We hit the disk
+        //     hit_disk = true;
+        //     num_disk_hits++;
 
-            //Move to the hit point
-            ray.position = hit_point;
+        //     //Move to the hit point
+        //     ray.position = hit_point;
 
-            Uint32 disk_colour = cal_accretion_disk_colour(hit_point, ray.direction, Params);
+        //     Uint32 disk_colour = cal_accretion_disk_colour(hit_point, ray.direction, Params);
 
-            //Apply acumlated redshift to the colour
-            Uint8 r = ((disk_colour >> 16) & 0xFF);
-            Uint8 g = ((disk_colour >> 8) & 0xFF);
-            Uint8 b = (disk_colour & 0xFF);
+        //     //Apply acumlated redshift to the colour
+        //     Uint8 r = ((disk_colour >> 16) & 0xFF);
+        //     Uint8 g = ((disk_colour >> 8) & 0xFF);
+        //     Uint8 b = (disk_colour & 0xFF);
 
-            // Apply redshift with smoother transition
-            double redshift_factor = ray.redshift;
-           // Apply intensity with smoother function to prevent sudden changes
-            double intensity_factor = ray.intensity;
+        //     // Apply redshift with smoother transition
+        //     double redshift_factor = ray.redshift;
+        //    // Apply intensity with smoother function to prevent sudden changes
+        //     double intensity_factor = ray.intensity;
 
-           // Convert to float for better precision during calculations
-            double rf = (double)r / 255.0 * redshift_factor * intensity_factor;
-            double gf = (double)g / 255.0 * redshift_factor * intensity_factor;
-            double bf = (double)b / 255.0 * redshift_factor * intensity_factor;
+        //    // Convert to float for better precision during calculations
+        //     double rf = (double)r / 255.0 * redshift_factor * intensity_factor;
+        //     double gf = (double)g / 255.0 * redshift_factor * intensity_factor;
+        //     double bf = (double)b / 255.0 * redshift_factor * intensity_factor;
 
-            double base_opacity = Params.disk.opacity;
-            if(num_disk_hits > 1){
-                // Apply a smoother transition for the opacity
-                base_opacity *= (0.7 / num_disk_hits);
-            }
+        //     double base_opacity = Params.disk.opacity;
+        //     if(num_disk_hits > 1){
+        //         // Apply a smoother transition for the opacity
+        //         base_opacity *= (0.7 / num_disk_hits);
+        //     }
 
-            //calculate this segments contribution based on opacity
-            double segment_opacity = base_opacity * (1.0 - accumulated_opacity);
-            accumulated_opacity = 1.0 - (1.0 - accumulated_opacity) * (1.0 - segment_opacity);
+        //     //calculate this segments contribution based on opacity
+        //     double segment_opacity = base_opacity * (1.0 - accumulated_opacity);
+        //     accumulated_opacity = 1.0 - (1.0 - accumulated_opacity) * (1.0 - segment_opacity);
 
-            //blend accumulated colour with the disk colour
-            accum_r = accum_r * (1.0 - segment_opacity) + rf * segment_opacity;
-            accum_g = accum_g * (1.0 - segment_opacity) + gf * segment_opacity;
-            accum_b = accum_b * (1.0 - segment_opacity) + bf * segment_opacity;
+        //     //blend accumulated colour with the disk colour
+        //     accum_r = accum_r * (1.0 - segment_opacity) + rf * segment_opacity;
+        //     accum_g = accum_g * (1.0 - segment_opacity) + gf * segment_opacity;
+        //     accum_b = accum_b * (1.0 - segment_opacity) + bf * segment_opacity;
             
-            // Calculate reflection angle - simplified for now
-            double reflection_factor = 0.3; //reflection factor
+        //     // Calculate reflection angle - simplified for now
+        //     double reflection_factor = 0.3; //reflection factor
             
-            // Adjust ray for partial reflection/transmission
-            Vec3 reflection = vec3_reflect(ray.direction, normal); //niether of these are used
+        //     // Adjust ray for partial reflection/transmission
+        //     Vec3 reflection = vec3_reflect(ray.direction, normal); //niether of these are used
 
-            //Blend between perfect reflection and transmission
-            ray.direction = vec3_normalise(
-                vec3_add(
-                    vec3_scale(reflection, reflection_factor),
-                    vec3_scale(ray.direction, 1.0 - reflection_factor)
-                )
-            );
+        //     //Blend between perfect reflection and transmission
+        //     ray.direction = vec3_normalise(
+        //         vec3_add(
+        //             vec3_scale(reflection, reflection_factor),
+        //             vec3_scale(ray.direction, 1.0 - reflection_factor)
+        //         )
+        //     );
 
-            ray.intensity *= (1.0 - Params.disk.opacity); //attenuate intensity based on reflection
+        //     ray.intensity *= (1.0 - Params.disk.opacity); //attenuate intensity based on reflection
 
-            //ray.position = vec3_add(ray.position, vec3_scale(ray.direction, distance)); //move the ray forward
-            ray.position = vec3_add(ray.position, vec3_scale(normal, 1e-3));//move ray slightly forward
-        }   
+        //     //ray.position = vec3_add(ray.position, vec3_scale(ray.direction, distance)); //move the ray forward
+        //     ray.position = vec3_add(ray.position, vec3_scale(normal, 1e-3));//move ray slightly forward
+        // }   
         if(!trace_rayStep(&ray, Params)){
             //Ray has crossed the event horizon
             break;
