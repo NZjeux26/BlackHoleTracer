@@ -1,6 +1,6 @@
 #version 410 core
 
-out vec4 FragColor;
+out vec4 FragColour;
 in vec2 TexCoord;
 
 // Black hole parameters
@@ -22,7 +22,7 @@ uniform float u_aspect;
 uniform vec2 u_resolution;
 
 // Skybox texture
-uniform sampler2D u_skybox;
+uniform samplerCube u_skybox;
 
 // Ray state structure (simulated with separate variables)
 struct RayState {
@@ -44,26 +44,9 @@ vec3 vec3_normalize_safe(vec3 v) {
 
 // Sample the spherical skybox using ray direction
 vec3 sample_skybox(vec3 direction) {
-    // Normalize direction vector\n"
-    vec3 dir = normalize(direction);
-   
-    // Convert to spherical coordinates\n"
-    // theta: azimuthal angle (0 to 2π) - horizontal rotation\n"
-    // phi: polar angle (0 to π) - vertical angle from north pole\n"
-  
-    float theta = atan(dir.z, dir.x) + 3.14159265; // [0, 2π]\n"
-    float phi = acos(clamp(dir.y, -1.0, 1.0));      // [0, π]\n"
-
-    // Convert to UV coordinates for equirectangular mapping\n"
-    // U maps theta (horizontal): 0 to 1 across image width\n"
-    // V maps phi (vertical): 0 to 1 from top to bottom\n"
-    vec2 uv = vec2(
-        theta / (2.0 * 3.14159265),  // u = θ/(2π)\n"
-        phi / 3.14159265             // v = φ/π\n"
-    );
-   
-    // Sample the skybox texture\n"
-   return texture(u_skybox, uv).rgb;
+    // Debug: Return pure red to verify function is being called
+    //return vec3(1.0, 0.0, 0.0);//this is actually happening, or something is overiding it.
+    return texture(u_skybox, normalize(direction)).rgb;
 }
 
 // Trace a single ray step through curved spacetime
@@ -119,16 +102,22 @@ bool trace_rayStep(inout RayState ray) {
     
     return true;
 }
-
 // Main raytracing function
 vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
-    vec3 bg_color = vec3(0.0, 2.0/255.0, 8.0/255.0); // Dark blue background
+    // Debug: Return pure green to verify function is being called
+    //return vec3(0.0, 1.0, 0.0);
+
+    vec3 bg_colour = vec3(0.0, 2.0/255.0, 8.0/255.0); // Dark blue background
     
     RayState ray;
     ray.position = ray_origin;
     ray.direction = ray_dir;
     ray.redshift = 1.0;
     ray.intensity = 1.0;
+    
+    // Store initial ray direction for skybox sampling if ray escapes
+    vec3 final_direction = ray_dir;
+    float accumulated_opacity = 0.8; //this is a left over from the accrention disk, I don't think it's required anymore in calculating the EH colour
     
     // Calculate impact parameter for ring effects
     vec3 h = cross(ray_origin, ray_dir);
@@ -138,22 +127,27 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
     float photon_ring_factor = 0.0;
     float einstein_ring_factor = 0.0;
     
-    float accumulated_opacity = 0.0;
-    vec3 accum_color = bg_color;
-    
-    // Ray tracing loop
+    // Ray tracing loop **Keeping in the accumulated_opacity for now, May be needed later and doesn't affect anything so far
     for (int step = 0; step < u_max_steps && accumulated_opacity < 0.99; step++) {
         if (!trace_rayStep(ray)) {
             // Ray crossed event horizon
-            break;
-        }
+            return vec3(0.0, 1.0, 0.0);//debug colour for now
+        }//this isn't being correctly triggered or the skybox is overriding it as a layer 
+        
+        final_direction = ray.direction;
         
         if (length(ray.position) > u_observer_distance * 10.0) {
             // Ray moved too far away
             break;
         }
     }
+   
+    // Sample skybox with the final (potentially bent) ray direction
+    vec3 skybox_colour = sample_skybox(final_direction);
     
+    // Apply redshift and intensity effects to skybox
+    //skybox_colour *= ray.redshift * ray.intensity;//this line is the issue
+
     // Calculate ring effects with smooth transitions
     
     // Einstein ring effect - smooth falloff
@@ -168,44 +162,39 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
         photon_ring_factor = max(0.0, 1.0 - dist * dist);
     }
     
-    vec3 final_color = accum_color;
-    
-    // Apply Einstein ring effect - blueish glow
+    // Apply Einstein ring effect - blueish glow **These two are adding ontop of eachother meaning that the colours are wrong.
     if (einstein_ring_factor > 0.01) {
-        final_color.r = min(final_color.r + 60.0/255.0 * einstein_ring_factor, 1.0);
-        final_color.g = min(final_color.g + 110.0/255.0 * einstein_ring_factor, 1.0);
-        final_color.b = min(final_color.b + 170.0/255.0 * einstein_ring_factor, 1.0);
+        skybox_colour += vec3(0.235, 0.431, 0.667) * einstein_ring_factor; // Light blue
     }
     
     // Apply photon ring effect - bright yellow ring
     if (photon_ring_factor > 0.01) {
-        final_color.r = min(final_color.r + 180.0/255.0 * photon_ring_factor, 1.0);
-        final_color.g = min(final_color.g + 170.0/255.0 * photon_ring_factor, 1.0);
-        final_color.b = min(final_color.b + 120.0/255.0 * photon_ring_factor, 1.0);
+       skybox_colour += vec3(0.706, 0.667, 0.471) * photon_ring_factor; // Bright yellow
     }
     
-    return final_color;
-}
+    return clamp(skybox_colour, 0.0, 1.0);
+}//function
 
 void main() {
-    // Calculate screen coordinates (from texture coordinates)
-    vec2 screen_pos = TexCoord * 2.0 - 1.0; // Convert from [0,1] to [-1,1]
-    screen_pos.y = -screen_pos.y; // Flip Y coordinate
+    // Debug: Return pure blue to verify main() is running
+    // FragColour = vec4(0.0, 0.0, 1.0, 1.0);
+    // return;
+
+    // Calculate ray direction
+    vec2 screen_pos = TexCoord * 2.0 - 1.0;
+    screen_pos.y = -screen_pos.y;
     
-    // Calculate ray direction using camera parameters
     float scale = tan(u_fov / 2.0);
     float screen_x = screen_pos.x * u_aspect * scale;
     float screen_y = screen_pos.y * scale;
     
-    // Construct ray direction in world space
     vec3 ray_dir = normalize(
         u_cam_right * screen_x + 
         u_cam_up * screen_y + 
         u_cam_forward
     );
     
-    // Trace the ray
-    vec3 color = trace_black_hole_ray(u_cam_pos, ray_dir);
+    vec3 colour = trace_black_hole_ray(u_cam_pos, ray_dir);
     
-    FragColor = vec4(color, 1.0);
+    FragColour = vec4(colour, 1.0);
 }

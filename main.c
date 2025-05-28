@@ -10,6 +10,7 @@
 #include <GL/glew.h>
 #include <SDL_opengl.h>
 #include "shaderutils.h"
+#include "skybox.h"
 #include "raytracer.h"
 
 int main() {
@@ -54,9 +55,29 @@ int main() {
         SDL_Quit();
         return 1;
     }
-    
+
     printf("OpenGL Version: %s\n", glGetString(GL_VERSION));
     printf("GLSL Version: %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
+
+    // Replace the skybox loading code with:
+    const char* cubemap_faces[6] = {
+        "textures/px.jpg",  // positive x
+        "textures/nx.jpg",   // negative x
+        "textures/py.jpg",    // positive y
+        "textures/ny.jpg", // negative y
+        "textures/pz.jpg",  // positive z
+        "textures/nz.jpg"    // negative z
+    };
+    
+    GLuint skybox_texture = create_cubemap_texture(cubemap_faces);
+    if (skybox_texture == 0) {
+        fprintf(stderr, "Failed to create cubemap texture\n");
+        SDL_GL_DeleteContext(gl_context);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+    printf("Cubemap texture created successfully\n");
 
     // Load and compile shaders
     GLuint shader_program = create_shader_program("shaders/vertex.glsl", "shaders/fragment.glsl");
@@ -67,12 +88,12 @@ int main() {
         SDL_Quit();
         return 1;
     }
-    
+
     // Setup geometry
     GLuint VAO, VBO;
     setup_fullscreen_quad(&VAO, &VBO);
 
-    BlackHoleParams params = init_BH_params(1.0, 70.0); // Mass and distance from black hole
+    BlackHoleParams params = init_BH_params(1.0, 90.0); // Mass and distance from black hole
 
      // Initialize SDL_image for PNG saving
     if (IMG_Init(IMG_INIT_PNG) == 0) {
@@ -109,9 +130,15 @@ int main() {
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         
-        // Set shader uniforms
+        // Use shader and set uniforms
+        glUseProgram(shader_program);
+         // Set shader uniforms
         set_shader_uniforms(shader_program, params, width, height);
-        
+        // Bind skybox texture
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, skybox_texture);
+        glUniform1i(glGetUniformLocation(shader_program, "u_skybox"), 0);
+
         // Render fullscreen quad
         glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
