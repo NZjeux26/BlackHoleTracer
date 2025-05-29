@@ -29,7 +29,7 @@ struct RayState {
     vec3 position;
     vec3 direction;
     float redshift;
-    float intensity;
+    float intensity; //this is redudant atm with no disk
 };
 
 // Vector math helpers
@@ -55,7 +55,6 @@ bool trace_rayStep(inout RayState ray) {
     
     // Check if ray crossed event horizon
     if (r <= u_schwarzschild_radius * 1.01) {
-        ray.intensity = 0.0;
         return false;
     }
     
@@ -80,7 +79,7 @@ bool trace_rayStep(inout RayState ray) {
     // Enhanced deflection near photon sphere
     if (r < 3.0 * rs) {
         float photon_sphere_factor = 1.0 + 2.0 * rs / (r - 1.5 * rs);
-        deflection_factor *= min(photon_sphere_factor, 5.0);
+        deflection_factor *= min(photon_sphere_factor, 5.0); //not as numerical robustness as it could be
     }
     
     // Apply gravitational deflection
@@ -89,7 +88,7 @@ bool trace_rayStep(inout RayState ray) {
     
     // Calculate redshift
     float redshift_factor = sqrt(max(0.1, 1.0 - u_schwarzschild_radius / r));
-    ray.redshift *= redshift_factor;
+    ray.redshift *= redshift_factor; //nothing is actually done with this red shifting.
     
     // Intensity damping
     float radial_component = abs(dot(ray.direction, radial_dir));
@@ -98,7 +97,7 @@ bool trace_rayStep(inout RayState ray) {
     
     // Move ray forward with adaptive step size
     float adaptive_dt = u_dt * min(1.0, r / (5.0 * u_schwarzschild_radius));
-    ray.position += ray.direction * adaptive_dt;
+    ray.position += ray.direction * adaptive_dt; //this is basicly Eular intergration and should be upgraded to RK4 at some point
     
     return true;
 }
@@ -106,8 +105,6 @@ bool trace_rayStep(inout RayState ray) {
 vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
     // Debug: Return pure green to verify function is being called
     //return vec3(0.0, 1.0, 0.0);
-
-    vec3 bg_colour = vec3(0.0, 2.0/255.0, 8.0/255.0); // Dark blue background
     
     RayState ray;
     ray.position = ray_origin;
@@ -128,10 +125,12 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
     float einstein_ring_factor = 0.0;
     
     // Ray tracing loop **Keeping in the accumulated_opacity for now, May be needed later and doesn't affect anything so far
-    for (int step = 0; step < u_max_steps && accumulated_opacity < 0.99; step++) {
+    for (int step = 0; step < u_max_steps; step++) {
+        
         if (!trace_rayStep(ray)) {
             // Ray crossed event horizon
             return vec3(0.0, 1.0, 0.0);//debug colour for now
+
         }//this isn't being correctly triggered or the skybox is overriding it as a layer 
         
         final_direction = ray.direction;
@@ -141,7 +140,7 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
             break;
         }
     }
-   
+    
     // Sample skybox with the final (potentially bent) ray direction
     vec3 skybox_colour = sample_skybox(final_direction);
     
@@ -159,7 +158,8 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
     // Photon ring effect - smooth falloff  
     if (abs(impact_params - 2.6 * rs) < 0.12 * rs) {
         float dist = abs(impact_params - 2.6 * rs) / (0.12 * rs);
-        photon_ring_factor = max(0.0, 1.0 - dist * dist);
+        //photon_ring_factor = max(0.0, 1.0 - dist * dist);
+        photon_ring_factor = exp(-pow(dist, 2.0) * 5.0); //Gaussian instead
     }
     
     // Apply Einstein ring effect - blueish glow **These two are adding ontop of eachother meaning that the colours are wrong.

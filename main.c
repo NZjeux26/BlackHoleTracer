@@ -11,7 +11,7 @@
 #include <SDL_opengl.h>
 #include "shaderutils.h"
 #include "skybox.h"
-#include "raytracer.h"
+#include "blackholemath.h"
 
 int main() {
     int width = 1200;
@@ -93,7 +93,8 @@ int main() {
     GLuint VAO, VBO;
     setup_fullscreen_quad(&VAO, &VBO);
 
-    BlackHoleParams params = init_BH_params(1.0, 90.0); // Mass and distance from black hole
+    //setup the BH parameters
+    BlackHoleParams params = init_BH_params(1.0, 100.0); // Mass and distance from black hole
 
      // Initialize SDL_image for PNG saving
     if (IMG_Init(IMG_INIT_PNG) == 0) {

@@ -25,4 +25,6 @@ typedef struct {
     //Spin parameter
     //
 } BlackHoleParams;
+
+BlackHoleParams init_BH_params(double mass, double observer_distance);
 #endif // BLACKHOLEMATH_H
