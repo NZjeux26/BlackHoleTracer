@@ -14,8 +14,8 @@
 #include "blackholemath.h"
 
 int main() {
-    int width = 1200;
-    int height = 900;
+    int width = 1280;
+    int height = 720;
 
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {

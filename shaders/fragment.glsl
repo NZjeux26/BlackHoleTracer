@@ -37,7 +37,7 @@ float vec3_length_safe(vec3 v) {
     return max(length(v), 1e-10);
 }
 
-vec3 vec3_normalize_safe(vec3 v) {
+vec3 vec3_normalise_safe(vec3 v) {
     float len = length(v);
     return len > 1e-10 ? v / len : vec3(0.0, 0.0, 1.0);
 }
@@ -51,20 +51,20 @@ vec3 sample_skybox(vec3 direction) {
 
 // Trace a single ray step through curved spacetime
 bool trace_rayStep(inout RayState ray) {
-    float r = vec3_length_safe(ray.position);
-    
+    float r = length(ray.position);
+    float rs = u_schwarzschild_radius;
+   
     // Check if ray crossed event horizon
-    if (r <= u_schwarzschild_radius * 1.01) {
+    if (r <= rs * 1.001) {
         return false;
     }
-    
+
     // Direction from position to black hole center
     vec3 radial_dir = -ray.position / r;
     
     // Calculate impact parameter
     vec3 h = cross(ray.position, ray.direction);
     float impact_parameter = length(h);
-    float rs = u_schwarzschild_radius;
     
     float critical_impact = 2.6 * rs;
     float impact_proximity = abs(impact_parameter - critical_impact);
@@ -81,10 +81,10 @@ bool trace_rayStep(inout RayState ray) {
         float photon_sphere_factor = 1.0 + 2.0 * rs / (r - 1.5 * rs);
         deflection_factor *= min(photon_sphere_factor, 5.0); //not as numerical robustness as it could be
     }
-    
+
     // Apply gravitational deflection
     vec3 deflection = radial_dir * deflection_factor;
-    ray.direction = vec3_normalize_safe(ray.direction + deflection);
+    ray.direction = vec3_normalise_safe(ray.direction + deflection);
     
     // Calculate redshift
     float redshift_factor = sqrt(max(0.1, 1.0 - u_schwarzschild_radius / r));
@@ -98,7 +98,7 @@ bool trace_rayStep(inout RayState ray) {
     // Move ray forward with adaptive step size
     float adaptive_dt = u_dt * min(1.0, r / (5.0 * u_schwarzschild_radius));
     ray.position += ray.direction * adaptive_dt; //this is basicly Eular intergration and should be upgraded to RK4 at some point
-    
+
     return true;
 }
 // Main raytracing function
@@ -129,23 +129,23 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
         
         if (!trace_rayStep(ray)) {
             // Ray crossed event horizon
-            return vec3(0.0, 1.0, 0.0);//debug colour for now
+            return vec3(0.0, 0.0, 0.0);
 
         }//this isn't being correctly triggered or the skybox is overriding it as a layer 
         
         final_direction = ray.direction;
         
-        if (length(ray.position) > u_observer_distance * 10.0) {
+        if (length(ray.position) > u_observer_distance * 10) {
             // Ray moved too far away
             break;
         }
     }
-    
+
     // Sample skybox with the final (potentially bent) ray direction
     vec3 skybox_colour = sample_skybox(final_direction);
-    
+  
     // Apply redshift and intensity effects to skybox
-    //skybox_colour *= ray.redshift * ray.intensity;//this line is the issue
+    //skybox_colour *= ray.redshift * ray.intensity;//this line is the issue for the skybox not showing
 
     // Calculate ring effects with smooth transitions
     
@@ -162,16 +162,30 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
         photon_ring_factor = exp(-pow(dist, 2.0) * 5.0); //Gaussian instead
     }
     
-    // Apply Einstein ring effect - blueish glow **These two are adding ontop of eachother meaning that the colours are wrong.
-    if (einstein_ring_factor > 0.01) {
-        skybox_colour += vec3(0.235, 0.431, 0.667) * einstein_ring_factor; // Light blue
-    }
+    // Apply Einstein ring effect - blueish glow 
+    //**These two are adding ontop of eachother meaning that the colours are wrong.
+    // if (einstein_ring_factor > 0.01) {
+    //     skybox_colour += vec3(0.235, 0.431, 0.667) * einstein_ring_factor; // Light blue
+    // }
     
-    // Apply photon ring effect - bright yellow ring
+    // // Apply photon ring effect - bright yellow ring
     if (photon_ring_factor > 0.01) {
        skybox_colour += vec3(0.706, 0.667, 0.471) * photon_ring_factor; // Bright yellow
     }
-    
+    // === Debug Ring Overlay (impact parameter based) ===
+    // float eps = 0.05 * u_schwarzschild_radius;
+
+    // if (impact_params < 2.0 * u_mass + eps) {
+    //     return vec3(1.0, 0.0, 0.0); // Red: Event horizon
+    // }
+
+    // if (abs(impact_params - 3.0 * u_mass) < eps) {
+    //     return vec3(0.0, 0.0, 1.0); // Blue: Photon sphere
+    // }
+
+    // if (abs(impact_params - 3.0 * sqrt(3.0) * u_mass) < eps) {
+    //     return vec3(0.0, 1.0, 0.0); // Green: Shadow edge
+    // }
     return clamp(skybox_colour, 0.0, 1.0);
 }//function
 
