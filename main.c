@@ -14,8 +14,8 @@
 #include "blackholemath.h"
 
 int main() {
-    int width = 1280;
-    int height = 720;
+    int width = 1920; // Set the width of the window
+    int height = 1080; // Set the height of the window
 
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -94,7 +94,7 @@ int main() {
     setup_fullscreen_quad(&VAO, &VBO);
 
     //setup the BH parameters
-    BlackHoleParams params = init_BH_params(1.0, 100.0); // Mass and distance from black hole
+    BlackHoleParams params = init_BH_params(1.0, 30.0); // Mass and distance from black hole
 
      // Initialize SDL_image for PNG saving
     if (IMG_Init(IMG_INIT_PNG) == 0) {
