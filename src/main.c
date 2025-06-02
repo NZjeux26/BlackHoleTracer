@@ -14,8 +14,8 @@
 #include "blackholemath.h"
 
 int main() {
-    int width = 1920; // Set the width of the window
-    int height = 1080; // Set the height of the window
+    int width = 2560; // Set the width of the window
+    int height = 1440; // Set the height of the window
 
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -114,7 +114,8 @@ int main() {
     SDL_Event event;
     bool running = true;
     bool save_image = true;
-
+    bool shouldd_render = true;
+    // Main loop
     while (running) {
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
@@ -126,36 +127,40 @@ int main() {
                 }
             }
         }
-
-         // Clear screen
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        
-        // Use shader and set uniforms
-        glUseProgram(shader_program);
-         // Set shader uniforms
-        set_shader_uniforms(shader_program, params, width, height);
-        // Bind skybox texture
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, skybox_texture);
-        glUniform1i(glGetUniformLocation(shader_program, "u_skybox"), 0);
-
-        // Render fullscreen quad
-        glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-        
-        // Save image if requested
-        if (save_image) {
-            save_framebuffer_to_png(width, height, "Images/blackhole_gpu.png");
-            save_image = false;
+        if(shouldd_render) {
+            // Clear screen
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
             
-            end_time = clock();
-            cpu_time_used = ((double)(end_time - start_time)) / CLOCKS_PER_SEC;
-            printf("GPU raytracing completed in: %f seconds\n", cpu_time_used);
+            // Use shader and set uniforms
+            glUseProgram(shader_program);
+            // Set shader uniforms
+            set_shader_uniforms(shader_program, params, width, height);
+            // Bind skybox texture
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, skybox_texture);
+            glUniform1i(glGetUniformLocation(shader_program, "u_skybox"), 0);
+
+            // Render fullscreen quad
+            glBindVertexArray(VAO);
+            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+            
+            // Save image if requested
+            if (save_image) {
+                save_framebuffer_to_png(width, height, "Images/blackhole_gpu.png");
+                save_image = false;
+                shouldd_render = false; // Stop rendering after saving the image
+
+                end_time = clock();
+                cpu_time_used = ((double)(end_time - start_time)) / CLOCKS_PER_SEC;
+                printf("GPU raytracing completed in: %f seconds\n", cpu_time_used);
+            }
+            
+            // Swap buffers
+            SDL_GL_SwapWindow(window);
         }
-        
-        // Swap buffers
-        SDL_GL_SwapWindow(window);
+        else SDL_Delay(100); // Wait if not rendering
+         
     }
     // Cleanup
     glDeleteVertexArrays(1, &VAO);

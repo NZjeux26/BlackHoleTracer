@@ -162,7 +162,9 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
     //skybox_colour *= ray.redshift * ray.intensity;//this line is the issue for the skybox not showing
 
     // Calculate ring effects with smooth transitions
-    
+    // Calculate ring effects with smooth transitions and redshift
+    float doppler_shift = ray.redshift;
+
     // Einstein ring effect - smooth falloff
     if (abs(impact_params - 2.8 * rs) < 0.3 * rs) {
         float dist = abs(impact_params - 2.8 * rs) / (0.3 * rs);
@@ -170,10 +172,10 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
     }
     
     // Photon ring effect - smooth falloff  
-    if (abs(impact_params - 2.6 * rs) < 0.12 * rs) {
-        float dist = abs(impact_params - 2.6 * rs) / (0.12 * rs);
-        photon_ring_factor = max(0.0, 1.0 - dist * dist);
-        photon_ring_factor = exp(-pow(dist, 2.0) * 5.0); //Gaussian instead
+    if (abs(impact_params - 2.6 * rs) < 0.3 * rs) { //the 0.2 is the width of the ring, with the side getting pregressivly redder further out
+        float dist = abs(impact_params - 2.6 * rs) / (0.3 * rs);
+        //photon_ring_factor = max(0.0, 1.0 - dist * dist); //Quadratic falloff
+        photon_ring_factor = exp(-pow(dist, 2.0) * 2.0); //Gaussian instead
     }
     float eps = 0.05 * u_schwarzschild_radius;
     // Apply Einstein ring effect - blueish glow 
@@ -182,9 +184,66 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
     //     skybox_colour += vec3(0.235, 0.431, 0.667) * einstein_ring_factor; // Light blue
     // }
     
-    // // Apply photon ring effect - bright yellow ring
+    // // Apply photon ring effect 
     if (photon_ring_factor > 0.01) {
-       skybox_colour += vec3(0.706, 0.667, 0.471) * photon_ring_factor; // Bright yellow
+        /*The previous vversion without the velocity calcculations looked almost the same*/
+        
+        //Start with the concentrated skybox light at this direction
+        vec3 concentrated_light = sample_skybox(final_direction);
+        
+           // Calculate orbital Doppler effect for photon sphere
+        // Photons at r = 1.5 * rs orbit with velocity v = c/sqrt(3) ≈ 0.577c
+        float photon_sphere_radius = 1.5 * rs;
+        vec3 to_observer = normalize(u_cam_pos - ray.position);
+        
+        // Calculate orbital velocity direction (tangent to sphere)
+        vec3 radial_dir = normalize(ray.position);
+        vec3 orbital_velocity_dir = normalize(cross(cross(radial_dir, to_observer), radial_dir));
+        
+        // Orbital speed at photon sphere (relativistic)
+        float orbital_speed = 0.577; // v/c = 1/sqrt(3)
+        
+        // Calculate angle between orbital motion and line of sight
+        float cos_angle = dot(orbital_velocity_dir, to_observer);
+        
+        // Relativistic Doppler formula: f_obs/f_source = sqrt((1-β)/(1+β)) * (1 + β*cos(θ))/(1 - β*cos(θ))
+        // Simplified for moderate velocities: factor ≈ 1 + β*cos(θ)
+        float orbital_doppler = 1.0 + orbital_speed * cos_angle;
+        
+        // Combine gravitational redshift with orbital Doppler
+        float total_shift = doppler_shift * orbital_doppler;
+        
+        // Apply gravitational lensing amplification
+        float lensing_amplification = 3.0 + 5.0 / max(0.05, abs(impact_params - 2.6 * rs));
+        concentrated_light *= lensing_amplification;
+        
+        // Apply spectral shifting based on combined effects
+        vec3 shifted_colour = concentrated_light;
+        
+        if (total_shift > 1.0) {
+            // Blueshift - approaching side of orbit
+            float blue_factor = min(3.0, total_shift);
+            shifted_colour.b *= (1.0 + (blue_factor - 1.0) * 2.0);  
+            shifted_colour.g *= (1.0 + (blue_factor - 1.0) * 0.5);  
+            shifted_colour.r *= (1.0 - (blue_factor - 1.0) * 0.8);  
+        } else {
+            // Redshift - receding side of orbit
+            float red_factor = max(0.1, total_shift);
+            shifted_colour.r *= (1.0 + (1.0 - red_factor) * 3.0);   
+            shifted_colour.g *= red_factor;                          
+            shifted_colour.b *= (red_factor * red_factor);           
+        }
+        
+        // Apply energy conservation 
+        float intensity_factor = pow(max(0.1, total_shift), 2.0);
+        shifted_colour *= intensity_factor;
+        
+        // Apply relativistic beaming - approaching side appears brighter
+        float beaming_factor = pow(orbital_doppler, 3.0); // Intensity ∝ δ^3 for synchrotron
+        shifted_colour *= beaming_factor;
+        
+        // Make the effect visible
+        skybox_colour += shifted_colour * photon_ring_factor * 0.8;
     }
     
     /* ****DEBUG RINGS**** */
@@ -193,17 +252,17 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
     //     return vec3(1.0, 0.0, 0.0); // Red
     // }
 
-    // Photon sphere radius (r = 3M, not b)
+    // //Photon sphere radius (r = 3M, not b)
     // if (abs(impact_params - 3.0 * u_mass) < eps) {
     //     return vec3(0.0, 0.0, 1.0); // Blue
     // }
 
-    // Shadow edge: b_crit = 3√3 M ≈ 5.196M
+    // //Shadow edge: b_crit = 3√3 M ≈ 5.196M
     // if (abs(impact_params - 3.0 * sqrt(3.0) * u_mass) < eps) {
     //     return vec3(0.0, 1.0, 0.0); // Green
     // }
 
-    // Einstein ring region (approx): b ≈ 6.0–7.0 M
+    // //Einstein ring region (approx): b ≈ 6.0–7.0 M
     // if (abs(impact_params - 6.0 * u_mass) < eps) {
     //     return vec3(1.0, 1.0, 0.0); // Yellow inside edge of ring
     // }
@@ -211,7 +270,7 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
     //     return vec3(1.0, 0.5, 0.0); // Orange outside egde
     // }
 
-    // Outer escape region (reference): b = 8.0 M
+    // //Outer escape region (reference): b = 8.0 M
     // if (abs(impact_params - 8.0 * u_mass) < eps) {
     //     return vec3(1.0, 1.0, 1.0); // White
     // }
