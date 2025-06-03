@@ -153,7 +153,7 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     // Camera setup
     double aspect_ratio = (double)width / (double)height;
     double fov = 50.0 * M_PI / 180.0; //FOV
-    double theta = 70.0 * M_PI / 180.0;//camera angle
+    double theta = 30.0 * M_PI / 180.0;//camera angle
     double r = params.observer_distance;
     
     // Camera position
@@ -165,7 +165,7 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     
     // Camera vectors (simplified - forward points toward origin)
     float cam_target[3] = {0.0f, 0.0f, 0.0f};
-    float cam_up[3] = {0.0f, 1.0f, 0.0f};
+    float cam_up[3] = {0.0f, 1.0f, 0.0f}; //camera from direction x y z
     
     // Calculate forward vector (from camera to target)
     float forward[3] = {

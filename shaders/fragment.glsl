@@ -157,27 +157,37 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
 
     // Sample skybox with the final (potentially bent) ray direction
     vec3 skybox_colour = sample_skybox(final_direction);
-   
-    // Apply redshift and intensity effects to skybox
-    //skybox_colour *= ray.redshift * ray.intensity;//this line is the issue for the skybox not showing
 
-    // Calculate ring effects with smooth transitions
     // Calculate ring effects with smooth transitions and redshift
     float doppler_shift = ray.redshift;
 
-    // Einstein ring effect - smooth falloff
-    if (abs(impact_params - 2.8 * rs) < 0.3 * rs) {
-        float dist = abs(impact_params - 2.8 * rs) / (0.3 * rs);
-        einstein_ring_factor = max(0.0, 1.0 - dist * dist);
-    }
+    // // Einstein ring effect - smooth falloff
+    // if (abs(impact_params - 2.8 * rs) < 0.3 * rs) {
+    //     float dist = abs(impact_params - 2.8 * rs) / (0.3 * rs);
+    //     einstein_ring_factor = max(0.0, 1.0 - dist * dist);
+    // }
     
     // Photon ring effect - smooth falloff  
-    if (abs(impact_params - 2.6 * rs) < 0.3 * rs) { //the 0.2 is the width of the ring, with the side getting pregressivly redder further out
-        float dist = abs(impact_params - 2.6 * rs) / (0.3 * rs);
-        //photon_ring_factor = max(0.0, 1.0 - dist * dist); //Quadratic falloff
-        photon_ring_factor = exp(-pow(dist, 2.0) * 2.0); //Gaussian instead
+    if (abs(impact_params - 2.6 * rs) < 0.35 * rs) { //the 0.2 is the width of the ring, with the side getting pregressivly redder further out
+        float dist = abs(impact_params - 2.6 * rs) / (0.35 * rs);
+        
+        // Combine multiple smooth functions for very gradual falloff **IDK if this really is right but it's smoother thans for sure.
+        float smooth_factor1 = 1.0 - smoothstep(0.0, 1.0, dist);           // Smooth hermite
+        float smooth_factor2 = exp(-pow(dist, 1.5) * 2.0);                  // Gentler exponential
+        float smooth_factor3 = 1.0 / (1.0 + pow(dist * 3.0, 4.0));         // Rational function
+        
+        // Blend the smooth functions for ultra-smooth transition
+        photon_ring_factor = mix(smooth_factor1, smooth_factor2, 0.4);
+        photon_ring_factor = mix(photon_ring_factor, smooth_factor3, 0.3);
+        
+        // Additional outer glow for even smoother edges
+        float glow_dist = abs(impact_params - 2.6 * rs) / (0.2 * rs);
+        if (glow_dist < 1.0) {
+            float glow_factor = pow(1.0 - glow_dist, 3.0) * 0.3;
+            photon_ring_factor = max(photon_ring_factor, glow_factor);
+        }
     }
-    float eps = 0.05 * u_schwarzschild_radius;
+    
     // Apply Einstein ring effect - blueish glow 
     //**These two are adding ontop of eachother meaning that the colours are wrong.
     // if (einstein_ring_factor > 0.01) {
@@ -191,7 +201,7 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
         //Start with the concentrated skybox light at this direction
         vec3 concentrated_light = sample_skybox(final_direction);
         
-           // Calculate orbital Doppler effect for photon sphere
+        // Calculate orbital Doppler effect for photon sphere
         // Photons at r = 1.5 * rs orbit with velocity v = c/sqrt(3) ≈ 0.577c
         float photon_sphere_radius = 1.5 * rs;
         vec3 to_observer = normalize(u_cam_pos - ray.position);
@@ -211,7 +221,7 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
         float orbital_doppler = 1.0 + orbital_speed * cos_angle;
         
         // Combine gravitational redshift with orbital Doppler
-        float total_shift = doppler_shift * orbital_doppler;
+        float total_shift = max(0.3, doppler_shift) * orbital_doppler;//doppler_shift * orbital_doppler;
         
         // Apply gravitational lensing amplification
         float lensing_amplification = 3.0 + 5.0 / max(0.05, abs(impact_params - 2.6 * rs));
@@ -220,7 +230,7 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
         // Apply spectral shifting based on combined effects
         vec3 shifted_colour = concentrated_light;
         
-        if (total_shift > 1.0) {
+        if (total_shift > 1.2) { //this is neevr triggered
             // Blueshift - approaching side of orbit
             float blue_factor = min(3.0, total_shift);
             shifted_colour.b *= (1.0 + (blue_factor - 1.0) * 2.0);  
@@ -233,20 +243,21 @@ vec3 trace_black_hole_ray(vec3 ray_origin, vec3 ray_dir) {
             shifted_colour.g *= red_factor;                          
             shifted_colour.b *= (red_factor * red_factor);           
         }
-        
+     
         // Apply energy conservation 
-        float intensity_factor = pow(max(0.1, total_shift), 2.0);
+        float intensity_factor = pow(max(0.13, total_shift), 1.8); //the top end affects intensity, higher = less intense (bright)
         shifted_colour *= intensity_factor;
         
         // Apply relativistic beaming - approaching side appears brighter
-        float beaming_factor = pow(orbital_doppler, 3.0); // Intensity ∝ δ^3 for synchrotron
+        float beaming_factor = pow(orbital_doppler, 3.0); // Intensity ∝ δ^3 for synchrotron this is the beam around the rim.
         shifted_colour *= beaming_factor;
         
         // Make the effect visible
-        skybox_colour += shifted_colour * photon_ring_factor * 0.8;
+        skybox_colour += shifted_colour * photon_ring_factor * 0.83;
     }
     
     /* ****DEBUG RINGS**** */
+    // float eps = 0.05 * u_schwarzschild_radius;
     // // Event horizon ring (b ≤ r_s = 2M)
     // if (impact_params < 2.0 * u_mass + eps) {
     //     return vec3(1.0, 0.0, 0.0); // Red

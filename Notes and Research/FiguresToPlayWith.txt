@@ -1,0 +1,25 @@
+To adjust the intensity effects, here are the key numbers to experiment with:
+1. Energy conservation power:
+glslfloat intensity_factor = pow(max(0.1, total_shift), 2.0);
+
+Current: 2.0 - Try 1.0 (linear) or 0.5 (square root) for less dampening
+Try 3.0 or 4.0 for more dramatic energy conservation effects
+
+2. Minimum clamp value:
+glslfloat intensity_factor = pow(max(0.1, total_shift), 2.0);
+
+Current: 0.1 - Try 0.3 or 0.5 to prevent extreme darkening
+Try 0.05 to allow more dramatic dimming
+
+3. Relativistic beaming power:
+glslfloat beaming_factor = pow(orbital_doppler, 3.0);
+
+Current: 3.0 - This is the theoretically correct value for synchrotron radiation
+Try 2.0 for less dramatic beaming
+Try 4.0 or 5.0 for more extreme brightness asymmetry
+
+4. Overall visibility factor:
+glslskybox_colour += shifted_color * photon_ring_factor * 0.8;
+
+Current: 0.8 - Try 1.2 or 1.5 to make the ring brighter overall
+Try 0.5 to make it more subtle
