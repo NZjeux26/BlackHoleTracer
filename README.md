@@ -10,6 +10,6 @@ This however didn't mean my own programmer instinct wasn't used, LLMs work best 
 
 I also worked at a VFX stuido, so leveraging the very talented crewmates I have to offer insight in either the physics, lighting, tools/language and just general ideas to either fix things on my own, or formulate better questions for the LLMs.
 
-This is the current up to date production. At the moment it's just a schwarzschild blackhole but in te process of making into a Kerr blackhole.
+This is the current up to date production. At the moment it's just a schwarzschild blackhole but in te process of making into a Kerr blackhole. See the Images folder for more renders in different skyboxes, camera angles and directions.
 
 ![blackhole_gpu](https://github.com/user-attachments/assets/a5491207-b468-4649-9b57-963138ae6bd0)
