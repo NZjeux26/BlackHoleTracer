@@ -1,4 +1,4 @@
-# Blackhole Raytraccing Simulator
+# Blackhole Raytracing Simulator
 
 This project started off as a simple attempt to replicate the Lumiet Blackhole image from his 1978 Paper. Instead of using complicated shaders and C++ I wanted to use just SDL and C to replicate the image, and since I wanted this to jsut be a 2D image and not a full 3D simulation I thought it would be much simpler achievable even without LLM help.
 
