@@ -9,3 +9,6 @@ LLM assitance was used extensively, I have no real calculus background and I was
 This however didn't mean my own programmer instinct wasn't used, LLMs work best with very directed questions and thus I did all code structutre and project layout along with the hours of debugging trying to find out why certian things happen as well as actual coding where needed to chnage things, bnut this was more in the style of working on an already established codebase vs blasting out code from scratch. 
 
 I also worked at a VFX stuido, so leveraging the very talented crewmates I have to offer insight in either the physics, lighting, tools/language and just general ideas to either fix things on my own, or formulate better questions for the LLMs.
+
+This is the current up to date production. At the moment it's just a schwarzschild blackhole but in te process of making into a Kerr blackhole.
+![blackhole_gpu4K1](https://github.com/user-attachments/assets/4197b965-4561-4006-af5e-8d46c9d5816b)
