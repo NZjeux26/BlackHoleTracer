@@ -14,8 +14,8 @@
 #include "blackholemath.h"
 
 int main() {
-    int width = 3840; // Set the width of the window
-    int height = 2160; // Set the height of the window
+    int width = 2560; // Set the width of the window
+    int height = 1440; // Set the height of the window
 
     bool use_ssaa = true;      // Toggle this to enable/disable SSAA
     int ssaa_scale = 2;        // 2× width/height = 4× SSAA

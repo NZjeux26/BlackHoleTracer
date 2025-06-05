@@ -153,7 +153,7 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     // Camera setup
     double aspect_ratio = (double)width / (double)height;
     double fov = 50.0 * M_PI / 180.0; //FOV
-    double theta = 0.0 * M_PI / 180.0;//camera angle
+    double theta = 70.0 * M_PI / 180.0;//camera angle
     double r = params.observer_distance;
     
     // Camera position
