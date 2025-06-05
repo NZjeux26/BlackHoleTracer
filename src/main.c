@@ -14,8 +14,11 @@
 #include "blackholemath.h"
 
 int main() {
-    int width = 1920; // Set the width of the window
-    int height = 1200; // Set the height of the window
+    int width = 3840; // Set the width of the window
+    int height = 2160; // Set the height of the window
+
+    bool use_ssaa = true;      // Toggle this to enable/disable SSAA
+    int ssaa_scale = 2;        // 2× width/height = 4× SSAA
 
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -27,6 +30,10 @@ int main() {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    
+    //4x MSAA
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);
 
     SDL_Window* window = SDL_CreateWindow("Black Hole Raytracer - OpenGL", 
                                   SDL_WINDOWPOS_UNDEFINED, 
@@ -46,7 +53,7 @@ int main() {
         SDL_Quit();
         return 1;
     }
-    
+
     // Initialize GLEW
     if (glewInit() != GLEW_OK) {
         fprintf(stderr, "GLEW initialization failed\n");
@@ -109,12 +116,12 @@ int main() {
 
     // Set viewport
     glViewport(0, 0, width, height);
-    
+
     // Main loop
     SDL_Event event;
     bool running = true;
     bool save_image = true;
-    bool shouldd_render = true;
+    bool should_render = true;
     // Main loop
     while (running) {
         while (SDL_PollEvent(&event)) {
@@ -127,7 +134,7 @@ int main() {
                 }
             }
         }
-        if(shouldd_render) {
+        if(should_render) {
             // Clear screen
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
@@ -144,13 +151,13 @@ int main() {
             // Render fullscreen quad
             glBindVertexArray(VAO);
             glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-            
+
             // Save image if requested
             if (save_image) {
                 save_framebuffer_to_png(width, height, "Images/blackhole_gpu.png");
                 save_image = false;
-                shouldd_render = false; // Stop rendering after saving the image
-
+                should_render = false; // Stop rendering after saving the image
+    
                 end_time = clock();
                 cpu_time_used = ((double)(end_time - start_time)) / CLOCKS_PER_SEC;
                 printf("GPU raytracing completed in: %f seconds\n", cpu_time_used);
@@ -159,14 +166,14 @@ int main() {
             // Swap buffers
             SDL_GL_SwapWindow(window);
         }
-        else SDL_Delay(100); // Wait if not rendering
+        else SDL_Delay(60); // Wait if not rendering
          
     }
     // Cleanup
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
     glDeleteProgram(shader_program);
-    
+
     IMG_Quit();
     SDL_GL_DeleteContext(gl_context);
     SDL_DestroyWindow(window);

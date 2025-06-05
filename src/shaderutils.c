@@ -153,7 +153,7 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     // Camera setup
     double aspect_ratio = (double)width / (double)height;
     double fov = 50.0 * M_PI / 180.0; //FOV
-    double theta = 30.0 * M_PI / 180.0;//camera angle
+    double theta = 0.0 * M_PI / 180.0;//camera angle
     double r = params.observer_distance;
     
     // Camera position
@@ -262,4 +262,32 @@ void save_framebuffer_to_png(int width, int height, const char* filename) {
     }
     
     free(pixels);
+}
+
+SSAAFramebuffer create_ssaa_fbo(int base_width, int base_height, int scale) {
+    SSAAFramebuffer ssaa = {0};
+    ssaa.width = base_width * scale;
+    ssaa.height = base_height * scale;
+
+    glGenFramebuffers(1, &ssaa.fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, ssaa.fbo);
+
+    glGenTextures(1, &ssaa.texture);
+    glBindTexture(GL_TEXTURE_2D, ssaa.texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, ssaa.width, ssaa.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ssaa.texture, 0);
+
+    glGenRenderbuffers(1, &ssaa.rbo);
+    glBindRenderbuffer(GL_RENDERBUFFER, ssaa.rbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, ssaa.width, ssaa.height);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, ssaa.rbo);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        fprintf(stderr, "SSAA FBO is not complete!\n");
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind
+    return ssaa;
 }

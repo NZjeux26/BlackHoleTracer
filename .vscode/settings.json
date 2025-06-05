@@ -1,7 +1,8 @@
 {
     "files.associations": {
         "math.h": "c",
-        "stdbool.h": "c"
+        "stdbool.h": "c",
+        "__locale": "c"
     },
     "C_Cpp.default.compilerPath": "/usr/bin/clang"
 }
