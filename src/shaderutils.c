@@ -140,10 +140,31 @@ Calculates view vectors and passes simulation settings to the shader.*/
 void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int height) {
     glUseProgram(program);
     
-    // Black hole parameters
+    // Kerr black hole parameters
     glUniform1f(glGetUniformLocation(program, "u_mass"), (float)params.mass);
+    glUniform1f(glGetUniformLocation(program, "u_spin"), (float)params.spin);
+    glUniform1f(glGetUniformLocation(program, "u_spin_dimensional"), (float)params.spin_dimensional);
+    
+    // Event horizons
     glUniform1f(glGetUniformLocation(program, "u_schwarzschild_radius"), (float)params.schwarzschild_radius);
+    glUniform1f(glGetUniformLocation(program, "u_kerr_radius_outer"), (float)params.kerr_radius_outer);
+    glUniform1f(glGetUniformLocation(program, "u_kerr_radius_inner"), (float)params.kerr_radius_inner);
+    
+    // Ergosphere
+    glUniform1f(glGetUniformLocation(program, "u_ergosphere_eq"), (float)params.ergosphere_radius_eq);
+    glUniform1f(glGetUniformLocation(program, "u_ergosphere_pole"), (float)params.ergosphere_radius_pole);
+    
+    // Critical orbits
+    glUniform1f(glGetUniformLocation(program, "u_isco_prograde"), (float)params.isco_radius_prograde);
+    glUniform1f(glGetUniformLocation(program, "u_isco_retrograde"), (float)params.isco_radius_retrograde);
+    glUniform1f(glGetUniformLocation(program, "u_photon_sphere_prograde"), (float)params.photon_sphere_prograde);
+    glUniform1f(glGetUniformLocation(program, "u_photon_sphere_retrograde"), (float)params.photon_sphere_retrograde);
+    
+    // Observer parameters
     glUniform1f(glGetUniformLocation(program, "u_observer_distance"), (float)params.observer_distance);
+    glUniform1f(glGetUniformLocation(program, "u_observer_inclination"), (float)params.observer_inclination);
+    
+    // Integration parameters
     glUniform1f(glGetUniformLocation(program, "u_dt"), (float)params.dt);
     glUniform1i(glGetUniformLocation(program, "u_max_steps"), params.max_steps);
     
@@ -153,7 +174,7 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     // Camera setup
     double aspect_ratio = (double)width / (double)height;
     double fov = 50.0 * M_PI / 180.0; //FOV
-    double theta = 70.0 * M_PI / 180.0;//camera angle
+    double theta = params.observer_inclination; // Observer inclination angle
     double r = params.observer_distance;
     
     // Camera position

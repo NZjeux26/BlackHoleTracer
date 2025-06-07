@@ -14,8 +14,8 @@
 #include "blackholemath.h"
 
 int main() {
-    int width = 2560; // Set the width of the window
-    int height = 1440; // Set the height of the window
+    int width = 1920; // Set the width of the window
+    int height = 1200; // Set the height of the window
 
     bool use_ssaa = true;      // Toggle this to enable/disable SSAA
     int ssaa_scale = 2;        // 2× width/height = 4× SSAA
@@ -101,7 +101,7 @@ int main() {
     setup_fullscreen_quad(&VAO, &VBO);
 
     //setup the BH parameters
-    BlackHoleParams params = init_BH_params(1.0, 30.0); // Mass and distance from black hole
+    BlackHoleParams params = init_BH_params(1.0, 0.8, 20.0); // Mass and distance from black hole
 
      // Initialize SDL_image for PNG saving
     if (IMG_Init(IMG_INIT_PNG) == 0) {
