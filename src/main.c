@@ -68,12 +68,12 @@ int main() {
 
     // Replace the skybox loading code with:
     const char* cubemap_faces[6] = {
-        "textures/px.jpg",  // positive x
-        "textures/nx.jpg",   // negative x
-        "textures/py.jpg",    // positive y
-        "textures/ny.jpg", // negative y
-        "textures/pz.jpg",  // positive z
-        "textures/nz.jpg"    // negative z
+        "textures2/px.jpg",  // positive x
+        "textures2/nx.jpg",   // negative x
+        "textures2/py.jpg",    // positive y
+        "textures2/ny.jpg", // negative y
+        "textures2/pz.jpg",  // positive z
+        "textures2/nz.jpg"    // negative z
     };
     
     GLuint skybox_texture = create_cubemap_texture(cubemap_faces);
@@ -101,7 +101,7 @@ int main() {
     setup_fullscreen_quad(&VAO, &VBO);
 
     //setup the BH parameters
-    BlackHoleParams params = init_BH_params(1.0, 0.8, 20.0); // Mass and distance from black hole
+    BlackHoleParams params = init_BH_params(1.0, 0.8, 25.0); // Mass and distance from black hole
 
      // Initialize SDL_image for PNG saving
     if (IMG_Init(IMG_INIT_PNG) == 0) {

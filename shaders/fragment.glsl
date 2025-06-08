@@ -72,20 +72,27 @@ float kerr_photon_sphere_retrograde(float M, float a) {
 }
 
 // Calculate impact parameters for Kerr geodesics
+// Hamilton-Jacobi separation for null geodesics
 vec2 calculate_kerr_impact_parameters(vec3 pos, vec3 dir, float a) {
-    // Convert to Boyer-Lindquist-like coordinates
     float r = length(pos);
-    float cos_theta = pos.z / r;
-    float sin_theta = sqrt(max(0.0, 1.0 - cos_theta * cos_theta));
-    
-    // Angular momentum and Carter constant approximations
-    vec3 angular_momentum = cross(pos, dir);
-    float L_z = angular_momentum.z;  // z-component of angular momentum
-    
-    // Carter constant (simplified - exact calculation is complex)
-    float carter_Q = dot(angular_momentum, angular_momentum) - L_z * L_z;
-    
-    return vec2(abs(L_z), sqrt(max(0.0, carter_Q)));
+    float theta = acos(clamp(pos.z / r, -1.0, 1.0));
+    float sin_theta = sin(theta);
+    float cos_theta = cos(theta);
+
+    // Normalised position and direction
+    vec3 x_hat = normalize(pos);
+    vec3 v_hat = normalize(dir);
+
+    // z-component of angular momentum (around spin axis)
+    float Lz = r * (pos.x * dir.y - pos.y * dir.x) / r;
+
+    // Estimate p_theta component
+    float p_theta = r * (cos_theta * dir.z - sin_theta * (dir.x * pos.x + dir.y * pos.y) / r);
+
+    // Approximate Carter constant Q
+    float Q = p_theta * p_theta + pow(cos_theta, 2.0) * (a * a + Lz * Lz / pow(sin_theta, 2.0));
+
+    return vec2(Lz, sqrt(max(Q, 0.0)));  // Return Lz and sqrt(Q)
 }
 
 // Kerr geodesic acceleration (simplified version)
@@ -171,6 +178,24 @@ bool trace_kerr_rayStep(inout RayState ray, float M, float a) {
     return true;
 }
 
+// Helper function to calculate critical impact parameter for Kerr photon sphere
+float kerr_critical_impact_parameter(float M, float a, float theta, bool is_prograde) {
+    float r_ph = is_prograde ? kerr_photon_sphere_prograde(M, a) : kerr_photon_sphere_retrograde(M, a);
+    
+    // Simplified approximation - for exact calculation you'd need to solve
+    // the full geodesic equations, but this gives good visual results
+    float sin_theta = sin(theta);
+    float cos_theta = cos(theta);
+    
+    // Base impact parameter (would be exact for Schwarzschild)
+    float b_base = r_ph * sqrt(27.0) / sqrt(2.0);  // ~3.464 * r_ph for circular photon orbits
+    
+    // Kerr corrections for spin effects
+    float spin_factor = 1.0 + (a / M) * cos_theta * (is_prograde ? -0.3 : 0.3);
+    
+    return b_base * spin_factor;
+}
+
 // Main Kerr raytracing function
 vec3 trace_kerr_ray(vec3 ray_origin, vec3 ray_dir, float M, float a) {
     RayState ray;
@@ -181,13 +206,17 @@ vec3 trace_kerr_ray(vec3 ray_origin, vec3 ray_dir, float M, float a) {
     
     vec3 final_direction = ray_dir;
     
-    // Calculate Kerr impact parameters
-    vec2 impact_params = calculate_kerr_impact_parameters(ray_origin, ray_dir, a);
-    float L_z = impact_params.x;  // Angular momentum
-    float carter_Q = impact_params.y; // Carter constant
+    // Calculate impact parameter (perpendicular distance from ray to black hole)
+    vec3 ray_to_bh = -ray_origin;  // Vector from ray origin to black hole at origin
+    vec3 ray_dir_norm = normalize(ray_dir);
+    float impact_param = length(cross(ray_to_bh, ray_dir_norm));
     
-    // Determine if orbit is prograde or retrograde
-    bool is_prograde = dot(cross(ray_origin, ray_dir), vec3(0.0, 0.0, 1.0)) > 0.0;
+    // Calculate angle with respect to spin axis for Kerr corrections
+    float theta = acos(clamp(ray_origin.z / length(ray_origin), -1.0, 1.0));
+    
+    // Determine if orbit is prograde or retrograde based on angular momentum
+    vec3 angular_momentum = cross(ray_origin, ray_dir);
+    bool is_prograde = angular_momentum.z > 0.0;
     
     // Ray tracing loop
     for (int step = 0; step < u_max_steps; step++) {
@@ -206,125 +235,111 @@ vec3 trace_kerr_ray(vec3 ray_origin, vec3 ray_dir, float M, float a) {
     // Sample skybox with final ray direction
     vec3 skybox_colour = sample_skybox(final_direction);
     
-    // Calculate Kerr-specific ring effects
-    float doppler_shift = ray.redshift;
+    // Calculate critical impact parameters for photon spheres
+    float b_crit_pro = kerr_critical_impact_parameter(M, a, theta, true);
+    float b_crit_retro = kerr_critical_impact_parameter(M, a, theta, false);
     
-    // Photon sphere effects (asymmetric for Kerr)
-    float r_ph_pro = kerr_photon_sphere_prograde(M, a);
-    float r_ph_retro = kerr_photon_sphere_retrograde(M, a);
+    // Choose the appropriate critical impact parameter
+    float b_crit = is_prograde ? b_crit_pro : b_crit_retro;
     
+    // Photon ring effects based on impact parameter
     float photon_ring_factor = 0.0;
-    float ring_width = 0.4 * M;
+    float ring_width = 0.35 * M * sqrt(27.0) / sqrt(2.0); // Scale ring width with critical impact parameter
     
-    if (is_prograde) {
-        // Prograde photon ring (closer to black hole, more intense)
-        if (abs(L_z - r_ph_pro) < ring_width) {
-            float dist = abs(L_z - r_ph_pro) / ring_width;
-            photon_ring_factor = exp(-pow(dist * 2.0, 2.0)) * 1.5; // More intense
-        }
-    } else {
-        // Retrograde photon ring (farther out, less intense)
-        if (abs(L_z - r_ph_retro) < ring_width) {
-            float dist = abs(L_z - r_ph_retro) / ring_width;
-            photon_ring_factor = exp(-pow(dist * 2.0, 2.0)) * 0.8; // Less intense
+    if (abs(impact_param - b_crit) < ring_width) {
+        float dist = abs(impact_param - b_crit) / ring_width;
+        
+        // Blend multiple falloffs for smooth ring
+        float smooth_factor1 = 1.0 - smoothstep(0.0, 1.0, dist);
+        float smooth_factor2 = exp(-pow(dist, 1.5) * 2.0);
+        float smooth_factor3 = 1.0 / (1.0 + pow(dist * 3.0, 4.0));
+        
+        photon_ring_factor = mix(smooth_factor1, smooth_factor2, 0.4);
+        photon_ring_factor = mix(photon_ring_factor, smooth_factor3, 0.3);
+        
+        // Outer glow based on impact parameter
+        float glow_dist = abs(impact_param - b_crit) / (0.2 * M);
+        if (glow_dist < 1.0) {
+            float glow_factor = pow(1.0 - glow_dist, 3.0) * 0.3;
+            photon_ring_factor = max(photon_ring_factor, glow_factor);
         }
     }
     
-    // Apply photon ring effects with Kerr-specific features
+    // Apply photon ring visual effects
     if (photon_ring_factor > 0.01) {
         vec3 concentrated_light = sample_skybox(final_direction);
-        
-        // Frame dragging Doppler effect
         vec3 to_observer = normalize(u_cam_pos - ray.position);
-        vec3 spin_axis = vec3(0.0, 1.0, 0.0);
+        vec3 radial_dir = normalize(ray.position);
         
-        // Calculate frame dragging velocity
-        float r = length(ray.position);
-        float omega_frame = 2.0 * M * a * r / (pow(r*r + a*a, 2.0));
-        vec3 drag_velocity = omega_frame * cross(spin_axis, normalize(ray.position));
+        // Orbital velocity direction (perpendicular to radial and toward observer)
+        vec3 orbital_velocity_dir = normalize(cross(cross(radial_dir, to_observer), radial_dir));
         
-        // Combined Doppler effect (orbital + frame dragging)
-        float orbital_speed = is_prograde ? 0.6 : 0.4; // Different speeds for pro/retrograde
-        vec3 total_velocity = orbital_speed * normalize(cross(spin_axis, to_observer)) + drag_velocity;
-        float total_doppler = 1.0 + dot(total_velocity, to_observer);
+        // Calculate orbital frequency at photon sphere
+        float r_ph = is_prograde ? kerr_photon_sphere_prograde(M, a) : kerr_photon_sphere_retrograde(M, a);
+        float omega = is_prograde
+            ? 1.0 / (a + pow(r_ph, 1.5) / M)
+            : 1.0 / (-a + pow(r_ph, 1.5) / M);
         
-        // Gravitational lensing (stronger for prograde orbits)
-        float lensing_factor = is_prograde ? 4.0 : 2.5;
-        float lensing_amplification = lensing_factor + 3.0 / max(0.05, abs(L_z - (is_prograde ? r_ph_pro : r_ph_retro)));
+        float orbital_speed = clamp(r_ph * omega, 0.0, 0.999);  // Avoid v > c
+        float cos_angle = dot(orbital_velocity_dir, to_observer);
+        float orbital_doppler = 1.0 + orbital_speed * cos_angle;
+        
+        // Combine with gravitational redshift
+        float total_shift = max(0.3, ray.redshift) * orbital_doppler;
+        
+        // Lensing amplification (depends on how close to critical impact parameter)
+        float lensing_amplification = (is_prograde ? 3.5 : 2.2) + 5.0 / max(0.05, abs(impact_param - b_crit));
         concentrated_light *= lensing_amplification;
         
-        // Spectral shifting with asymmetric effects
         vec3 shifted_colour = concentrated_light;
-        float combined_shift = doppler_shift * total_doppler;
         
-        if (is_prograde) {
-            // Prograde: stronger redshift on inner edge, blueshift on outer
-            if (L_z < r_ph_pro) {
-                // Inner edge - strong redshift
-                float red_factor = max(0.2, combined_shift);
-                shifted_colour.r *= (1.0 + (1.0 - red_factor) * 4.0);
-                shifted_colour.g *= red_factor * 0.7;
-                shifted_colour.b *= red_factor * red_factor * 0.5;
-            } else {
-                // Outer edge - moderate blueshift
-                float blue_factor = min(2.0, combined_shift);
-                shifted_colour.b *= (1.0 + (blue_factor - 1.0) * 1.5);
-                shifted_colour.g *= (1.0 + (blue_factor - 1.0) * 0.3);
-            }
+        // Spectral shifting based on total Doppler effect
+        if (total_shift > 1.2) {
+            // Blueshift regime
+            float blue_factor = min(3.0, total_shift);
+            shifted_colour.b *= (1.0 + (blue_factor - 1.0) * 2.0);
+            shifted_colour.g *= (1.0 + (blue_factor - 1.0) * 0.5);
+            shifted_colour.r *= (1.0 - (blue_factor - 1.0) * 0.8);
         } else {
-            // Retrograde: more uniform redshift
-            float red_factor = max(0.3, combined_shift);
-            shifted_colour.r *= (1.0 + (1.0 - red_factor) * 2.5);
-            shifted_colour.g *= red_factor * 0.8;
-            shifted_colour.b *= red_factor * red_factor * 0.7;
+            // Redshift regime
+            float red_factor = max(0.1, total_shift);
+            shifted_colour.r *= (1.0 + (1.0 - red_factor) * 3.0);
+            shifted_colour.g *= red_factor;
+            shifted_colour.b *= red_factor * red_factor;
         }
         
-        // Intensity with relativistic beaming
-        float beaming_power = is_prograde ? 3.5 : 2.5;
-        float intensity_factor = pow(max(0.1, combined_shift), 1.5);
-        float beaming_factor = pow(max(0.5, total_doppler), beaming_power);
+        // Energy scaling with relativistic beaming
+        float intensity_factor = pow(max(0.13, total_shift), 1.8);
+        float beaming_factor = pow(max(0.5, orbital_doppler), is_prograde ? 3.0 : 2.5);
         
         shifted_colour *= intensity_factor * beaming_factor;
         
-        // Apply the ring effect
-        float ring_intensity = is_prograde ? 1.2 : 0.9;
-        skybox_colour += shifted_colour * photon_ring_factor * ring_intensity;
+        // Add to skybox with asymmetric intensity
+        skybox_colour += shifted_colour * photon_ring_factor * (is_prograde ? 1.1 : 0.9);
     }
     
     // Ergosphere effects (subtle glow for rays passing through)
     float r = length(ray.position);
-    float theta = acos(clamp(ray.position.z / r, -1.0, 1.0));
-    float r_ergo = kerr_ergosphere_radius(M, a, theta);
+    float current_theta = acos(clamp(ray.position.z / r, -1.0, 1.0));
+    float r_ergo = kerr_ergosphere_radius(M, a, current_theta);
     
     if (r < r_ergo && r > kerr_outer_horizon(M, a)) {
         // Add subtle frame-dragging glow
         float ergo_factor = (r_ergo - r) / (r_ergo - kerr_outer_horizon(M, a));
-        vec3 ergo_color = vec3(0.3, 0.1, 0.4) * ergo_factor * 0.2;
-        skybox_colour += ergo_color;
+        vec3 ergo_colour = vec3(0.3, 0.1, 0.4) * ergo_factor * 0.2;
+        skybox_colour += ergo_colour;
     }
     
     /* DEBUG RINGS FOR KERR CRITICAL SURFACES */
-    // float eps = 0.05 * M;
+    float eps = 0.05 * M;
     
-    // // Event horizon
-    // if (abs(L_z - kerr_outer_horizon(M, a)) < eps) {
-    //     return vec3(1.0, 0.0, 0.0); // Red - outer horizon
-    // }
-    
-    // // Prograde photon sphere
-    // if (abs(L_z - r_ph_pro) < eps) {
-    //     return vec3(0.0, 1.0, 0.0); // Green - prograde photon sphere
-    // }
-    
-    // // Retrograde photon sphere  
-    // if (abs(L_z - r_ph_retro) < eps) {
-    //     return vec3(0.0, 0.0, 1.0); // Blue - retrograde photon sphere
-    // }
-    
-    // // Ergosphere boundary
-    // if (abs(r - r_ergo) < eps) {
-    //     return vec3(1.0, 1.0, 0.0); // Yellow - ergosphere
-    // }
+    // Debug impact parameter rings (uncomment to visualize)
+    if (abs(impact_param - b_crit_pro) < eps) {
+        return vec3(0.0, 1.0, 0.0); // Green - prograde critical impact parameter
+    }
+    if (abs(impact_param - b_crit_retro) < eps) {
+        return vec3(0.0, 0.0, 1.0); // Blue - retrograde critical impact parameter
+    }
     
     return clamp(skybox_colour, 0.0, 1.0);
 }
