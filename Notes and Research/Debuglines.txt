@@ -1,0 +1,24 @@
+Event Horizons:
+
+Red: Outer event horizon (r+)
+Dark Red: Inner event horizon/Cauchy horizon (r-)
+
+Kerr-Specific Features:
+
+Magenta: Ergosphere boundary
+Blue: Prograde photon sphere
+Light Blue: Retrograde photon sphere
+Green: Prograde critical impact parameter (shadow edge)
+Light Green: Retrograde critical impact parameter
+Cyan: ISCO (Innermost Stable Circular Orbit)
+White: Marginally bound orbit
+
+Einstein Ring Regions (approximated):
+
+Yellow: Inner Einstein ring region (~6M)
+Orange: Outer Einstein ring region (~8M)
+
+Reference Rings:
+
+Gray: 10M reference
+Dark Gray: 15M reference

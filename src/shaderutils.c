@@ -186,7 +186,7 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     
     // Camera vectors (simplified - forward points toward origin)
     float cam_target[3] = {0.0f, 0.0f, 0.0f};
-    float cam_up[3] = {0.0f, 1.0f, 0.0f}; //camera from direction x y z
+    float cam_up[3] = {0.0f, 1.0f, 100.0f}; //camera from direction x y z
     
     // Calculate forward vector (from camera to target)
     float forward[3] = {

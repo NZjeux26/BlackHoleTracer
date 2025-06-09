@@ -14,7 +14,7 @@ BlackHoleParams init_BH_params(double mass, double spin, double observer_distanc
     
     // Observer parameters
     params.observer_distance = observer_distance;
-    params.observer_inclination = 70.0 * M_PI / 180.0; // Default viewing angle
+    params.observer_inclination = 90.0 * M_PI / 180.0; // Default viewing angle
     
     // Calculate Kerr-specific quantities
     calculate_kerr_horizons(&params);

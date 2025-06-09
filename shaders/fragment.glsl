@@ -246,6 +246,11 @@ vec3 trace_kerr_ray(vec3 ray_origin, vec3 ray_dir, float M, float a) {
     float photon_ring_factor = 0.0;
     float ring_width = 0.35 * M * sqrt(27.0) / sqrt(2.0); // Scale ring width with critical impact parameter
     
+    // Photon sphere radii - prograde and retrograde
+    float r_ph_pro = kerr_photon_sphere_prograde(M, a);
+    float r_ph_retro = kerr_photon_sphere_retrograde(M, a);
+
+    float photon_sphere_radius = is_prograde ? r_ph_pro : r_ph_retro;
     if (abs(impact_param - b_crit) < ring_width) {
         float dist = abs(impact_param - b_crit) / ring_width;
         
@@ -265,58 +270,58 @@ vec3 trace_kerr_ray(vec3 ray_origin, vec3 ray_dir, float M, float a) {
         }
     }
     
-    // Apply photon ring visual effects
-    if (photon_ring_factor > 0.01) {
-        vec3 concentrated_light = sample_skybox(final_direction);
-        vec3 to_observer = normalize(u_cam_pos - ray.position);
-        vec3 radial_dir = normalize(ray.position);
+    // // Apply photon ring visual effects
+    // if (photon_ring_factor > 0.01) {
+    //     vec3 concentrated_light = sample_skybox(final_direction);
+    //     vec3 to_observer = normalize(u_cam_pos - ray.position);
+    //     vec3 radial_dir = normalize(ray.position);
         
-        // Orbital velocity direction (perpendicular to radial and toward observer)
-        vec3 orbital_velocity_dir = normalize(cross(cross(radial_dir, to_observer), radial_dir));
+    //     // Orbital velocity direction (perpendicular to radial and toward observer)
+    //     vec3 orbital_velocity_dir = normalize(cross(cross(radial_dir, to_observer), radial_dir));
         
-        // Calculate orbital frequency at photon sphere
-        float r_ph = is_prograde ? kerr_photon_sphere_prograde(M, a) : kerr_photon_sphere_retrograde(M, a);
-        float omega = is_prograde
-            ? 1.0 / (a + pow(r_ph, 1.5) / M)
-            : 1.0 / (-a + pow(r_ph, 1.5) / M);
+    //     // Calculate orbital frequency at photon sphere
+    //     float r_ph = is_prograde ? kerr_photon_sphere_prograde(M, a) : kerr_photon_sphere_retrograde(M, a);
+    //     float omega = is_prograde
+    //         ? 1.0 / (a + pow(r_ph, 1.5) / M)
+    //         : 1.0 / (-a + pow(r_ph, 1.5) / M);
         
-        float orbital_speed = clamp(r_ph * omega, 0.0, 0.999);  // Avoid v > c
-        float cos_angle = dot(orbital_velocity_dir, to_observer);
-        float orbital_doppler = 1.0 + orbital_speed * cos_angle;
+    //     float orbital_speed = clamp(r_ph * omega, 0.0, 0.9999);  // Avoid v > c
+    //     float cos_angle = dot(orbital_velocity_dir, to_observer);
+    //     float orbital_doppler = 1.0 + orbital_speed * cos_angle;
         
-        // Combine with gravitational redshift
-        float total_shift = max(0.3, ray.redshift) * orbital_doppler;
+    //     // Combine with gravitational redshift
+    //     float total_shift = max(0.3, ray.redshift) * orbital_doppler;
         
-        // Lensing amplification (depends on how close to critical impact parameter)
-        float lensing_amplification = (is_prograde ? 3.5 : 2.2) + 5.0 / max(0.05, abs(impact_param - b_crit));
-        concentrated_light *= lensing_amplification;
+    //     // Lensing amplification (depends on how close to critical impact parameter)
+    //     float lensing_amplification = (is_prograde ? 3.5 : 2.2) + 5.0 / max(0.05, abs(impact_param - b_crit));
+    //     concentrated_light *= lensing_amplification;
         
-        vec3 shifted_colour = concentrated_light;
+    //     vec3 shifted_colour = concentrated_light;
         
-        // Spectral shifting based on total Doppler effect
-        if (total_shift > 1.2) {
-            // Blueshift regime
-            float blue_factor = min(3.0, total_shift);
-            shifted_colour.b *= (1.0 + (blue_factor - 1.0) * 2.0);
-            shifted_colour.g *= (1.0 + (blue_factor - 1.0) * 0.5);
-            shifted_colour.r *= (1.0 - (blue_factor - 1.0) * 0.8);
-        } else {
-            // Redshift regime
-            float red_factor = max(0.1, total_shift);
-            shifted_colour.r *= (1.0 + (1.0 - red_factor) * 3.0);
-            shifted_colour.g *= red_factor;
-            shifted_colour.b *= red_factor * red_factor;
-        }
+    //     // Spectral shifting based on total Doppler effect
+    //     if (total_shift > 1.2) {
+    //         // Blueshift regime
+    //         float blue_factor = min(3.0, total_shift);
+    //         shifted_colour.b *= (1.0 + (blue_factor - 1.0) * 2.0);
+    //         shifted_colour.g *= (1.0 + (blue_factor - 1.0) * 0.5);
+    //         shifted_colour.r *= (1.0 - (blue_factor - 1.0) * 0.8);
+    //     } else {
+    //         // Redshift regime
+    //         float red_factor = max(0.1, total_shift);
+    //         shifted_colour.r *= (1.0 + (1.0 - red_factor) * 3.0);
+    //         shifted_colour.g *= red_factor;
+    //         shifted_colour.b *= red_factor * red_factor;
+    //     }
         
-        // Energy scaling with relativistic beaming
-        float intensity_factor = pow(max(0.13, total_shift), 1.8);
-        float beaming_factor = pow(max(0.5, orbital_doppler), is_prograde ? 3.0 : 2.5);
+    //     // Energy scaling with relativistic beaming
+    //     float intensity_factor = pow(max(0.13, total_shift), 1.8);
+    //     float beaming_factor = pow(max(0.5, orbital_doppler), is_prograde ? 3.0 : 2.5);
         
-        shifted_colour *= intensity_factor * beaming_factor;
+    //     shifted_colour *= intensity_factor * beaming_factor;
         
-        // Add to skybox with asymmetric intensity
-        skybox_colour += shifted_colour * photon_ring_factor * (is_prograde ? 1.1 : 0.9);
-    }
+    //     // Add to skybox with asymmetric intensity
+    //     skybox_colour += shifted_colour * photon_ring_factor * (is_prograde ? 1.1 : 0.9);
+    // }
     
     // Ergosphere effects (subtle glow for rays passing through)
     float r = length(ray.position);
@@ -330,16 +335,71 @@ vec3 trace_kerr_ray(vec3 ray_origin, vec3 ray_dir, float M, float a) {
         skybox_colour += ergo_colour;
     }
     
-    /* DEBUG RINGS FOR KERR CRITICAL SURFACES */
-    float eps = 0.05 * M;
+    // /* DEBUG RINGS FOR KERR CRITICAL SURFACES */
+     //float eps = 0.05 * M;
     
-    // Debug impact parameter rings (uncomment to visualize)
-    if (abs(impact_param - b_crit_pro) < eps) {
-        return vec3(0.0, 1.0, 0.0); // Green - prograde critical impact parameter
-    }
-    if (abs(impact_param - b_crit_retro) < eps) {
-        return vec3(0.0, 0.0, 1.0); // Blue - retrograde critical impact parameter
-    }
+    // // Event horizon rings - outer and inner horizons for Kerr
+    // float r_plus = kerr_outer_horizon(M, a);   // r+ = M + sqrt(M^2 - a^2)
+    // float r_minus = kerr_inner_horizon(M, a);  // r- = M - sqrt(M^2 - a^2)
+    
+    // if (impact_param < r_plus + eps) {
+    //     return vec3(1.0, 0.0, 0.0); // Red - outer event horizon
+    // }
+    // if (abs(impact_param - r_minus) < eps && r_minus > 0.0) {
+    //     return vec3(0.8, 0.0, 0.0); // Dark red - inner event horizon (Cauchy horizon)
+    // }
+    
+    // // Ergosphere boundary
+    // if (abs(impact_param - r_ergo) < eps) {
+    //     return vec3(1.0, 0.0, 1.0); // Magenta - ergosphere boundary
+    // }
+    
+    // if (abs(impact_param - r_ph_pro) < eps) {
+    //     return vec3(0.0, 0.0, 1.0); // Blue - prograde photon sphere
+    // }
+    // if (abs(impact_param - r_ph_retro) < eps) {
+    //     return vec3(0.0, 0.5, 1.0); // Light blue - retrograde photon sphere
+    // }
+    
+    // // Critical impact parameters - shadow edge
+    // if (abs(impact_param - b_crit_pro) < eps) {
+    //     return vec3(0.0, 1.0, 0.0); // Green - prograde critical impact parameter (shadow edge)
+    // }
+    // if (abs(impact_param - b_crit_retro) < eps) {
+    //     return vec3(0.5, 1.0, 0.0); // Light green - retrograde critical impact parameter
+    // }
+    
+    // // Einstein ring region approximations for Kerr (these are more complex than Schwarzschild)
+    // // For Kerr, Einstein ring depends on source position, but we'll use rough estimates
+    // float einstein_ring_inner = 6.0 * M;  // Approximate inner Einstein ring
+    // float einstein_ring_outer = 8.0 * M;  // Approximate outer Einstein ring
+    
+    // if (abs(impact_param - einstein_ring_inner) < eps) {
+    //     return vec3(1.0, 1.0, 0.0); // Yellow - inner Einstein ring region
+    // }
+    // if (abs(impact_param - einstein_ring_outer) < eps) {
+    //     return vec3(1.0, 0.5, 0.0); // Orange - outer Einstein ring region
+    // }
+    
+    // // Stable circular orbit radius (ISCO - Innermost Stable Circular Orbit)
+    // // float r_isco = kerr_isco_radius(M, a, is_prograde);
+    // // if (abs(impact_param - r_isco) < eps) {
+    // //     return vec3(0.0, 1.0, 1.0); // Cyan - ISCO
+    // // }
+    
+    // // Marginally bound orbit
+    // // float r_mb = kerr_marginally_bound_radius(M, a, is_prograde);
+    // // if (abs(impact_param - r_mb) < eps) {
+    // //     return vec3(1.0, 1.0, 1.0); // White - marginally bound orbit
+    // // }
+    
+    // // Additional reference rings
+    // if (abs(impact_param - 10.0 * M) < eps) {
+    //     return vec3(0.5, 0.5, 0.5); // Gray - 10M reference ring
+    // }
+    // if (abs(impact_param - 15.0 * M) < eps) {
+    //     return vec3(0.3, 0.3, 0.3); // Dark gray - 15M reference ring
+    // }
     
     return clamp(skybox_colour, 0.0, 1.0);
 }
