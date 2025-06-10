@@ -28,7 +28,8 @@ BlackHoleParams init_BH_params(double mass, double spin, double observer_distanc
     params.disk.temperature_factor = 1.0;
     
     // Integration parameters (may need adjustment for Kerr)
-    params.dt = 0.05 * params.schwarzschild_radius;
+    params.max_dt = 0.1 * params.schwarzschild_radius;
+    params.min_dt = 0.01 * params.schwarzschild_radius; // Smaller step for stability
     params.max_steps = 2000;
     
     return params;

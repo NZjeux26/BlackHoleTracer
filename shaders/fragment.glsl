@@ -7,7 +7,8 @@ in vec2 TexCoord;
 uniform float u_mass;
 uniform float u_schwarzschild_radius;
 uniform float u_observer_distance;
-uniform float u_dt;
+uniform float u_min_dt;
+uniform float u_max_dt;
 uniform int u_max_steps;
 uniform float u_spin;  // Kerr spin parameter (a)
 
@@ -31,6 +32,20 @@ struct RayState {
     vec3 direction;
     float redshift;
     float intensity;
+    // Conserved quantities for Kerr geodesics
+    float energy;        // E - energy at infinity
+    float angular_momentum; // L_z - angular momentum around spin axis
+    float carter_constant;  // Q - Carter constant (generalized angular momentum)
+};
+
+// Coordinate system utilities
+struct KerrCoords {
+    float r, theta, phi;
+    float sin_theta, cos_theta;
+    float sin_phi, cos_phi;
+    float rho2;     // r² + a²cos²θ
+    float delta;    // r² - 2Mr + a²
+    float sigma;    // (r² + a²)² - a²Δsin²θ
 };
 
 // Vector math helpers
@@ -133,6 +148,21 @@ vec3 kerr_acceleration(vec3 pos, vec3 vel, float M, float a) {
     return radial_accel + tangential_accel + frame_drag;
 }
 
+// Simple adaptive step size based on distance from black hole
+float get_adaptive_step_size(vec3 position, float M) {
+    float r = length(position);
+    float critical_radius = 10.0 * M;  // Transition point
+    
+    if (r < critical_radius) {
+        // Near black hole: use smaller steps for accuracy
+        float proximity_factor = r / critical_radius;  // 0 to 1
+        return mix(0.02, 0.05, proximity_factor);      // 0.02 to 0.05
+    } else {
+        // Far from black hole: use larger steps for performance
+        return 0.1;  // 2x your current step size
+    }
+}
+
 // Trace a single ray step through Kerr spacetime
 bool trace_kerr_rayStep(inout RayState ray, float M, float a) {
     float r = vec3_length_safe(ray.position);
@@ -143,6 +173,8 @@ bool trace_kerr_rayStep(inout RayState ray, float M, float a) {
         return false;
     }
     
+    float u_dt = get_adaptive_step_size(ray.position, M);
+
     vec3 pos = ray.position;
     vec3 vel = ray.direction;
     
@@ -217,7 +249,7 @@ vec3 trace_kerr_ray(vec3 ray_origin, vec3 ray_dir, float M, float a) {
     // Determine if orbit is prograde or retrograde based on angular momentum
     vec3 angular_momentum = cross(ray_origin, ray_dir);
     bool is_prograde = angular_momentum.z > 0.0;
-    
+
     // Ray tracing loop
     for (int step = 0; step < u_max_steps; step++) {
         if (!trace_kerr_rayStep(ray, M, a)) {
@@ -374,12 +406,12 @@ vec3 trace_kerr_ray(vec3 ray_origin, vec3 ray_dir, float M, float a) {
     // float einstein_ring_inner = 6.0 * M;  // Approximate inner Einstein ring
     // float einstein_ring_outer = 8.0 * M;  // Approximate outer Einstein ring
     
-    if (abs(impact_param - einstein_ring_inner) < eps) {
-        return vec3(1.0, 1.0, 0.0); // Yellow - inner Einstein ring region
-    }
-    if (abs(impact_param - einstein_ring_outer) < eps) {
-        return vec3(1.0, 0.5, 0.0); // Orange - outer Einstein ring region
-    }
+    // if (abs(impact_param - einstein_ring_inner) < eps) {
+    //     return vec3(1.0, 1.0, 0.0); // Yellow - inner Einstein ring region
+    // }
+    // if (abs(impact_param - einstein_ring_outer) < eps) {
+    //     return vec3(1.0, 0.5, 0.0); // Orange - outer Einstein ring region
+    // }
     
     // // Stable circular orbit radius (ISCO - Innermost Stable Circular Orbit)
     // // float r_isco = kerr_isco_radius(M, a, is_prograde);

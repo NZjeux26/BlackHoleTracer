@@ -165,7 +165,8 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     glUniform1f(glGetUniformLocation(program, "u_observer_inclination"), (float)params.observer_inclination);
     
     // Integration parameters
-    glUniform1f(glGetUniformLocation(program, "u_dt"), (float)params.dt);
+    glUniform1f(glGetUniformLocation(program, "u_min_dt"), (float)params.min_dt);
+    glUniform1f(glGetUniformLocation(program, "u_max_dt"), (float)params.max_dt);
     glUniform1i(glGetUniformLocation(program, "u_max_steps"), params.max_steps);
     
     // Screen parameters

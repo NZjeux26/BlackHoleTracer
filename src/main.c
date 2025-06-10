@@ -100,8 +100,10 @@ int main() {
     GLuint VAO, VBO;
     setup_fullscreen_quad(&VAO, &VBO);
 
-    //setup the BH parameters
-    BlackHoleParams params = init_BH_params(1.0, 0.99, 10.0); // Mass and distance from black hole
+    //setup the BH parameters Mass(geometrix units), Spin(% speed of C), Distance (gemoetric units)
+    // Note: In geometric units, mass is in terms of Schwarzschild radius (M = 1)
+    // Spin is dimensionless (a/M), where -1 ≤ a/M ≤ 1, and distance is in terms of Schwarzschild radius.
+    BlackHoleParams params = init_BH_params(1.0, 0.99, 40.0); // Mass and distance from black hole
 
      // Initialize SDL_image for PNG saving
     if (IMG_Init(IMG_INIT_PNG) == 0) {

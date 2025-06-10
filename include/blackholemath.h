@@ -81,7 +81,8 @@ typedef struct {
     AccretionDisk disk;
     
     // Integration parameters
-    double dt;                      // Integration step size
+    double min_dt;                      // Integration step size
+    double max_dt;
     int max_steps;                  // Maximum ray tracing steps
 } BlackHoleParams;
 
