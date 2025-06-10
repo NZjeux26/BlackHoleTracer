@@ -374,12 +374,12 @@ vec3 trace_kerr_ray(vec3 ray_origin, vec3 ray_dir, float M, float a) {
     // float einstein_ring_inner = 6.0 * M;  // Approximate inner Einstein ring
     // float einstein_ring_outer = 8.0 * M;  // Approximate outer Einstein ring
     
-    // if (abs(impact_param - einstein_ring_inner) < eps) {
-    //     return vec3(1.0, 1.0, 0.0); // Yellow - inner Einstein ring region
-    // }
-    // if (abs(impact_param - einstein_ring_outer) < eps) {
-    //     return vec3(1.0, 0.5, 0.0); // Orange - outer Einstein ring region
-    // }
+    if (abs(impact_param - einstein_ring_inner) < eps) {
+        return vec3(1.0, 1.0, 0.0); // Yellow - inner Einstein ring region
+    }
+    if (abs(impact_param - einstein_ring_outer) < eps) {
+        return vec3(1.0, 0.5, 0.0); // Orange - outer Einstein ring region
+    }
     
     // // Stable circular orbit radius (ISCO - Innermost Stable Circular Orbit)
     // // float r_isco = kerr_isco_radius(M, a, is_prograde);
