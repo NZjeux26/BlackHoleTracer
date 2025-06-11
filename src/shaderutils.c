@@ -165,8 +165,8 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     glUniform1f(glGetUniformLocation(program, "u_observer_inclination"), (float)params.observer_inclination);
     
     // Integration parameters
-    glUniform1f(glGetUniformLocation(program, "u_min_dt"), (float)params.min_dt);
-    glUniform1f(glGetUniformLocation(program, "u_max_dt"), (float)params.max_dt);
+    glUniform1f(glGetUniformLocation(program, "u_eps"), (float)params.eps);
+    glUniform1f(glGetUniformLocation(program, "u_dtau"), (float)params.dtau);
     glUniform1i(glGetUniformLocation(program, "u_max_steps"), params.max_steps);
     
     // Screen parameters
@@ -174,12 +174,12 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     
     // Camera setup
     double aspect_ratio = (double)width / (double)height;
-    double fov = 50.0 * M_PI / 180.0; //FOV
-    double theta = params.observer_inclination; // Observer inclination angle
+    double fov = 60.0 * M_PI / 180.0;
+    double theta = 0.0 * M_PI / 180.0;  // Angle from +x axis
     double r = params.observer_distance;
     
-    // Camera position
-    float cam_pos[3] = {
+   // Camera position in spherical coordinates -> Cartesian
+     float cam_pos[3] = {
         0.0f,
         (float)(r * sin(theta)),
         (float)(-r * cos(theta))
@@ -203,6 +203,7 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     forward[2] /= forward_len;
     
     // Calculate right vector (forward × up)
+ // Calculate right vector (forward × world_up)
     float right[3] = {
         forward[1] * cam_up[2] - forward[2] * cam_up[1],
         forward[2] * cam_up[0] - forward[0] * cam_up[2],
@@ -211,11 +212,11 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     
     // Normalize right
     float right_len = sqrt(right[0]*right[0] + right[1]*right[1] + right[2]*right[2]);
-    right[0] /= right_len;
-    right[1] /= right_len;
-    right[2] /= right_len;
-    
-    // Recalculate up (right × forward)
+        right[0] /= right_len;
+        right[1] /= right_len;
+        right[2] /= right_len;
+
+    // Calculate up (right × forward) 
     float up[3] = {
         right[1] * forward[2] - right[2] * forward[1],
         right[2] * forward[0] - right[0] * forward[2],
@@ -229,6 +230,14 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     glUniform3f(glGetUniformLocation(program, "u_cam_right"), right[0], right[1], right[2]);
     glUniform1f(glGetUniformLocation(program, "u_fov"), (float)fov);
     glUniform1f(glGetUniformLocation(program, "u_aspect"), (float)aspect_ratio);
+
+    printf("Camera pos: (%.2f, %.2f, %.2f)\n", cam_pos[0], cam_pos[1], cam_pos[2]);
+    printf("Forward: (%.2f, %.2f, %.2f)\n", forward[0], forward[1], forward[2]);
+    printf("Right: (%.2f, %.2f, %.2f)\n", right[0], right[1], right[2]);
+    printf("Up: (%.2f, %.2f, %.2f)\n", up[0], up[1], up[2]);
+    printf("theta: %.2f degrees\n", theta * 180.0 / M_PI);
+    printf("Camera pos: (%.2f, %.2f, %.2f)\n", cam_pos[0], cam_pos[1], cam_pos[2]);
+    printf("Camera distance from origin: %.2f\n", sqrt(cam_pos[0]*cam_pos[0] + cam_pos[1]*cam_pos[1] + cam_pos[2]*cam_pos[2]));
 }
 
 /*Reads the framebuffer into memory, flips it vertically, and saves it as a PNG using SDL.
