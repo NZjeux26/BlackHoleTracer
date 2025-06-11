@@ -27,31 +27,41 @@ uniform vec2 u_resolution;
 // Skybox texture
 uniform samplerCube u_skybox;
 
+//Cconstants
 float M = u_mass; // Mass of the black hole
-float a = u_spin * M;
+float a = u_spin * M; //Spin parameter spin amount * Mass of the black hole
+
 //////////////////////////////////////////////////////////////
 // Kerr Metric in Kerr-Schild Coordinates
 //////////////////////////////////////////////////////////////
 
-// Sample the spherical skybox using ray direction
-vec3 sample_skybox(vec3 direction) {
-    // Debug: Return pure red to verify function is being called
-    //return vec3(1.0, 0.0, 0.0);//this is actually happening, or something is overiding it.
-    return texture(u_skybox, normalize(direction)).rgb;
-}
+///////////////
+// Utility Functions
+/////////////////
 
+/*Computes the inverse of a 4x4 matrix*/
 mat4 diag(vec4 v) {
     return mat4(v.x,0,0,0, 0,v.y,0,0, 0,0,v.z,0, 0,0,0,v.w);
 }
+///Normalizes a 4D vector using the metric tensor g, ensuring it has unit length
+vec4 unit(vec4 v, mat4 g) {
+    float norm2 = dot(g * v, v);
+    return (norm2 != 0.0) ? v / sqrt(abs(norm2)) : v;
+}
 
+/////////////////////
+// Core Physics Functions
+/////////////////////
+
+/*Converts 4D Kerr-Schild coordinates to the radial coordinate r used in the Kerr metric*/
 float rFromCoords(vec4 pos) {
     vec3 p = pos.yzw;
-    float a = u_spin;
     float rho2 = dot(p,p) - a*a;
     float r2 = 0.5 * (rho2 + sqrt(rho2*rho2 + 4.0*a*a*p.z*p.z));
     return sqrt(r2);
 }
-
+/*Computes the Kerr spacetime metric tensor at a given 4D position,
+describing the curvature of spacetime around the rotating black hole*/
 mat4 metric(vec4 pos) {
     float r = rFromCoords(pos);
     vec4 k = vec4(-1.0, (r*pos.y - a*pos.z)/(r*r + a*a),
@@ -60,11 +70,18 @@ mat4 metric(vec4 pos) {
     float f = 2.0 * M * r / (r*r + a*a * pos.a*pos.a / (r*r));
     return f * mat4(k.x*k, k.y*k, k.z*k, k.w*k) + diag(vec4(-1,1,1,1));
 }
-
+/*Calculates the Hamiltonian (total energy) of a photon at position x with momentum p, 
+used for geodesic integration*/
 float hamiltonian(vec4 x, vec4 p) {
     return 0.5 * dot(inverse(metric(x)) * p, p);
 }
 
+/////////////////
+// Geodesic Integration Functions
+/////////////////
+
+/*Computes the numerical gradient of the Hamiltonian 
+using finite differences for the equations of motion*/
 vec4 hamiltonianGradient(vec4 x, vec4 p) {
     float eps = u_eps;
     return (vec4(
@@ -75,12 +92,15 @@ vec4 hamiltonianGradient(vec4 x, vec4 p) {
     ) - hamiltonian(x, p)) / eps;
 }
 
+/*Performs one step of Hamiltonian integration to advance the photon's 
+position and momentum along its geodesic path*/
 void transportStep(inout vec4 x, inout vec4 p) {
     float dtau = u_dtau;
     p -= dtau * hamiltonianGradient(x, p);
     x += dtau * inverse(metric(x)) * p;
 }
 
+/*Determines when to stop raytracing (either the photon hits the event horizon or escapes to infinity)*/
 bool stopCondition(vec4 pos) {
     float observer_distance = u_observer_distance;
     float r = rFromCoords(pos);
@@ -88,11 +108,13 @@ bool stopCondition(vec4 pos) {
     return r < M + sqrt(M*M - a*a) || r > observer_distance * 10.0;
 }
 
-vec4 unit(vec4 v, mat4 g) {
-    float norm2 = dot(g * v, v);
-    return (norm2 != 0.0) ? v / sqrt(abs(norm2)) : v;
-}
+/////////////// 
+// Rendering Functions & Coordinate Systems
+/////////////////
 
+/*Constructs a tetrad (orthonormal basis) for the observer's frame in Kerr spacetime,
+given the observer's position, time direction, aim direction, and vertical direction.
+This tetrad is used to convert between 4D spacetime coordinates and 3D spatial coordinates.*/
 mat4 tetrad(vec4 x, vec4 time, vec4 aim, vec4 vert) {
     mat4 g = metric(x);
     vec4 E0 = unit(time, g);
@@ -111,6 +133,15 @@ mat4 tetrad(vec4 x, vec4 time, vec4 aim, vec4 vert) {
     return basis;
 }
 
+// Sample the spherical skybox using ray direction
+vec3 sample_skybox(vec3 direction) {
+    // Debug: Return pure red to verify function is being called
+    //return vec3(1.0, 0.0, 0.0);//this is actually happening, or something is overiding it.
+    return texture(u_skybox, normalize(direction)).rgb;
+}
+
+/*Main raytracing function that follows a light ray through curved spacetime 
+and returns the color from the skybox or black for captured rays*/
 vec3 trace_kerr_ray(vec3 dir, vec4 camPos, mat4 axes) {
     vec4 pos = camPos;
     //pos.yzw += vec3(u_observer_distance, 0.0, 0.0); // Shift BH to origin
@@ -133,7 +164,7 @@ vec3 trace_kerr_ray(vec3 dir, vec4 camPos, mat4 axes) {
 
     // Sample skybox direction
     vec4 out_dir = inverse(metric(final_pos)) * p;
-    vec3 cube_dir = normalize(vec3(-out_dir.y, out_dir.w, -out_dir.z));
+    vec3 cube_dir = normalize(vec3(-out_dir.y, out_dir.w, -out_dir.z));//this controls the background skybox
     
     // In trace_kerr_ray, before the return:
     return captured ? vec3(0.0) : sample_skybox(cube_dir);
@@ -155,7 +186,8 @@ void main() {
     );
     
     // Observer 4-position and initial time direction
-    //vec4 camPos = vec4(0.0, u_cam_pos.x, u_cam_pos.y, u_cam_pos.z);
+    // Note: u_cam_pos is in the format (t, x, y, z) where t is time
+    // and (x, y, z) are the spatial coordinates.
     vec4 camPos = vec4(0.0, u_cam_pos.x, u_cam_pos.z, u_cam_pos.y);
     // Map 3D camera vectors to 4D space
     vec4 aim = vec4(0.0, u_cam_forward.x, u_cam_forward.y, u_cam_forward.z);
