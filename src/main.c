@@ -15,7 +15,7 @@
 
 int main() {
     int width = 1200; // Set the width of the window
-    int height = 900; // Set the height of the window
+    int height = 800; // Set the height of the window
 
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -65,12 +65,12 @@ int main() {
 
     // Replace the skybox loading code with:
     const char* cubemap_faces[6] = {
-        "textures2/px.jpg",  // positive x
-        "textures2/nx.jpg",   // negative x
-        "textures2/py.jpg",    // positive y
-        "textures2/ny.jpg", // negative y
-        "textures2/pz.jpg",  // positive z
-        "textures2/nz.jpg"    // negative z
+        "textures/px.jpg",  // positive x
+        "textures/nx.jpg",   // negative x
+        "textures/py.jpg",    // positive y
+        "textures/ny.jpg", // negative y
+        "textures/pz.jpg",  // positive z
+        "textures/nz.jpg"    // negative z
     };
     
     GLuint skybox_texture = create_cubemap_texture(cubemap_faces);
@@ -100,7 +100,7 @@ int main() {
     //setup the BH parameters Mass(geometrix units), Spin(% speed of C), Distance (gemoetric units)
     // Note: In geometric units, mass is in terms of Schwarzschild radius (M = 1)
     // Spin is dimensionless (a/M), where -1 ≤ a/M ≤ 1, and distance is in terms of Schwarzschild radius.
-    BlackHoleParams params = init_BH_params(1.0, 0.8, 30.0); // Mass and distance from black hole
+    BlackHoleParams params = init_BH_params(1.0, 0.9, 20.0); // Mass and distance from black hole
 
      // Initialize SDL_image for PNG saving
     if (IMG_Init(IMG_INIT_PNG) == 0) {

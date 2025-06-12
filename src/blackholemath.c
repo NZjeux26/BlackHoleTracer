@@ -5,7 +5,7 @@ BlackHoleParams init_BH_params(double mass, double spin, double observer_distanc
     
     // Core properties
     params.mass = mass;
-    params.spin = fmax(-0.9999, fmin(0.9999, spin)); // Clamp to physical range
+    params.spin = fmax(-0.97, fmin(0.97, spin)); // Clamp to physical range I clamp to 0.97 since higher gives artifacting
     params.spin_dimensional = params.spin * mass;   // a = (a/M) * M
     
     // Basic Schwarzschild quantities

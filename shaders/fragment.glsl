@@ -145,7 +145,8 @@ and returns the color from the skybox or black for captured rays*/
 vec3 trace_kerr_ray(vec3 dir, vec4 camPos, mat4 axes) {
     vec4 pos = camPos;
     //pos.yzw += vec3(u_observer_distance, 0.0, 0.0); // Shift BH to origin
-    vec4 dir4D = -axes[0] + dir.x * axes[1] + dir.y * axes[2] + dir.z * axes[3];
+    //vec4 dir4D = -axes[0] + dir.x * axes[1] + dir.y * axes[2] + dir.z * axes[3];
+    vec4 dir4D = -axes[0] + vec4(0.0, dir.x, dir.y, dir.z); //changing to this fixed the rotation issue with the camera
     vec4 p = metric(pos) * dir4D;
 
     bool captured = false;
@@ -188,7 +189,7 @@ void main() {
     // Observer 4-position and initial time direction
     // Note: u_cam_pos is in the format (t, x, y, z) where t is time
     // and (x, y, z) are the spatial coordinates.
-    vec4 camPos = vec4(0.0, u_cam_pos.x, u_cam_pos.z, u_cam_pos.y);
+    vec4 camPos = vec4(0.0, u_cam_pos.x, u_cam_pos.y, u_cam_pos.z);
     // Map 3D camera vectors to 4D space
     vec4 aim = vec4(0.0, u_cam_forward.x, u_cam_forward.y, u_cam_forward.z);
     vec4 vert = vec4(0.0, u_cam_up.x, u_cam_up.y, u_cam_up.z);
