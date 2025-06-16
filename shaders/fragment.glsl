@@ -2,7 +2,7 @@
 
 out vec4 FragColour;
 in vec2 TexCoord;
-#define PI 3.1415926538;
+#define PI 3.1415926538
 
 // Black hole parameters
 uniform float u_mass;
@@ -12,6 +12,13 @@ uniform float u_dtau;
 uniform float u_eps;
 uniform int u_max_steps;
 uniform float u_spin;  // Kerr spin parameter (a)
+
+// Accretion disk parameters
+uniform float u_disk_inner_radius;
+uniform float u_disk_outer_radius;
+uniform float u_disk_opacity;
+uniform float u_disk_temperature_factor;
+uniform float u_disk_thickness;
 
 // Camera parameters
 uniform vec3 u_cam_pos;
@@ -26,6 +33,7 @@ uniform vec2 u_resolution;
 
 // Skybox texture
 uniform samplerCube u_skybox;
+uniform sampler2D u_disk_texture;  // Accretion disk texture
 
 //Cconstants
 float M = u_mass; // Mass of the black hole
@@ -102,10 +110,9 @@ void transportStep(inout vec4 x, inout vec4 p) {
 
 /*Determines when to stop raytracing (either the photon hits the event horizon or escapes to infinity)*/
 bool stopCondition(vec4 pos) {
-    float observer_distance = u_observer_distance;
     float r = rFromCoords(pos);
-    float a = u_spin * M;
-    return r < M + sqrt(M*M - a*a) || r > observer_distance * 10.0;
+    float horizon = M + sqrt(M*M - a*a);
+    return r < horizon || r > u_observer_distance * 10.0;
 }
 
 /////////////// 
@@ -140,21 +147,74 @@ vec3 sample_skybox(vec3 direction) {
     return texture(u_skybox, normalize(direction)).rgb;
 }
 
+// Calculate disk colour with temperature and Doppler effects
+// Calculate disk color with temperature and Doppler effects
+vec3 calculateDiskColour(vec2 diskUV, float blueshift, float r) {
+    // Base disk texture
+    vec3 baseColour = texture(u_disk_texture, diskUV).rgb;
+
+    // Temperature-based emission (simplified blackbody)
+    float temp_factor = u_disk_temperature_factor / pow(r / u_disk_inner_radius, 0.75);
+    vec3 thermal_colour = vec3(1.0, 0.8, 0.6) * temp_factor;
+
+    // Apply Doppler shift (relativistic beaming)
+    vec3 disk_colour = mix(baseColour, thermal_colour, 0.7);
+    disk_colour *= pow(abs(blueshift), 3.0); // Relativistic beaming
+
+    return disk_colour;
+}
+
+// Check if a position is within the accretion disk
+// Uses your existing AccretionDisk parameters
+bool isInDisk(vec4 pos) {
+    float r = rFromCoords(pos);
+    return abs(pos.w) < u_disk_thickness * 0.5 && 
+           r >= u_disk_inner_radius && 
+           r <= u_disk_outer_radius;
+}
+
 /*Main raytracing function that follows a light ray through curved spacetime 
-and returns the color from the skybox or black for captured rays*/
+and returns the colour from the skybox or black for captured rays*/
 vec3 trace_kerr_ray(vec3 dir, vec4 camPos, mat4 axes) {
     vec4 pos = camPos;
-    //pos.yzw += vec3(u_observer_distance, 0.0, 0.0); // Shift BH to origin
-    //vec4 dir4D = -axes[0] + dir.x * axes[1] + dir.y * axes[2] + dir.z * axes[3];
     vec4 dir4D = -axes[0] + vec4(0.0, dir.x, dir.y, dir.z); //changing to this fixed the rotation issue with the camera
     vec4 p = metric(pos) * dir4D;
 
     bool captured = false;
+    bool hitDisk = false;
+    vec4 intersectPos;
+    vec2 diskUV;
+    float blueshift;
     vec4 final_pos;
 
     for (int i = 0; i < u_max_steps; i++) {
         vec4 last_pos = pos;
         transportStep(pos, p);
+
+        if(pos.w * last_pos.w < 0.0){
+            // Interpolate to find exact intersection point
+            intersectPos = (pos * abs(last_pos.w) + last_pos * abs(pos.w)) / (abs(last_pos.w) + abs(pos.w));
+            float r = rFromCoords(intersectPos);
+
+            // Check if intersection is within disk bounds
+            if (r > u_disk_inner_radius && r < u_disk_outer_radius) {
+                hitDisk = true;
+
+                // Calculate UV coordinates for disk texture
+                diskUV = (intersectPos.yz / u_disk_outer_radius + 1.0) * 0.5;
+
+                // Calculate disk velocity for Doppler shift
+                // Simplified Keplerian velocity in Kerr spacetime
+                float sqrt_r = sqrt(r);
+                vec4 diskVel = vec4(r + a/sqrt_r, 
+                                   vec3(-intersectPos.z, intersectPos.y, 0.0) * sign(a) / sqrt_r) / 
+                               sqrt(r*r - 3.0*r + 2.0*a*sqrt_r);
+
+                // Calculate Doppler factor
+                blueshift = 1.0 / dot(p, diskVel);
+                break;
+            }
+        }
         if (stopCondition(pos)) {
             float r = rFromCoords(pos);
             captured = r < M + sqrt(M*M - a*a);
@@ -163,12 +223,19 @@ vec3 trace_kerr_ray(vec3 dir, vec4 camPos, mat4 axes) {
         final_pos = pos;
     }
 
-    // Sample skybox direction
-    vec4 out_dir = inverse(metric(final_pos)) * p;
-    vec3 cube_dir = normalize(vec3(-out_dir.y, out_dir.w, -out_dir.z));//this controls the background skybox
-    
-    // In trace_kerr_ray, before the return:
-    return captured ? vec3(0.0) : sample_skybox(cube_dir);
+    if(hitDisk){
+        float r = rFromCoords(intersectPos);
+        return calculateDiskColour(diskUV, blueshift, r);
+    }
+
+    else{
+        // Sample skybox direction
+        vec4 out_dir = inverse(metric(final_pos)) * p;
+        vec3 cube_dir = normalize(vec3(-out_dir.y, out_dir.w, -out_dir.z));//this controls the background skybox
+
+        // In trace_kerr_ray, before the return:
+        return captured ? vec3(0.0) : sample_skybox(cube_dir);
+    }
 }
 
 void main() {

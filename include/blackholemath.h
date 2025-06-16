@@ -42,7 +42,7 @@ typedef struct {
     
     // Physical constants (geometric units)
     double c_squared;               // Speed of light squared
-    
+
     // Accretion disk properties
     AccretionDisk disk;
     
@@ -53,4 +53,6 @@ typedef struct {
 } BlackHoleParams;
 
 BlackHoleParams init_BH_params(double mass, double spin, double observer_distance);
+void calculate_kerr_horizons(BlackHoleParams* params);
+void calculate_critical_orbits(BlackHoleParams* params);
 #endif // BLACKHOLEMATH_H

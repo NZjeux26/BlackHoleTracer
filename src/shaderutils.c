@@ -49,6 +49,20 @@ GLuint compile_shader(const char* source, GLenum shader_type) {
     return shader;
 }
 
+GLuint create_simple_disk_texture() {
+    unsigned char orange_data[] = {255, 128, 32}; // Orange color
+    
+    GLuint texture_id;
+    glGenTextures(1, &texture_id);
+    glBindTexture(GL_TEXTURE_2D, texture_id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, orange_data);
+    
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    
+    return texture_id;
+}
+
 /*Loads, compiles, and links a vertex and fragment shader into a GLSL program.
 Cleans up shader resources and returns the final program object or 0 on error.*/
 GLuint create_shader_program(const char* vertex_path, const char* fragment_path) {
@@ -169,13 +183,20 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     glUniform1f(glGetUniformLocation(program, "u_dtau"), (float)params.dtau);
     glUniform1i(glGetUniformLocation(program, "u_max_steps"), params.max_steps);
     
+    // Accretion Disk
+    glUniform1f(glGetUniformLocation(program, "u_disk_inner_radius"), params.disk.inner_radius);
+    glUniform1f(glGetUniformLocation(program, "u_disk_outer_radius"), params.disk.outer_radius);
+    glUniform1f(glGetUniformLocation(program, "u_disk_opacity"), params.disk.opacity);
+    glUniform1f(glGetUniformLocation(program, "u_disk_temperature_factor"), params.disk.temperature_factor);
+    glUniform1f(glGetUniformLocation(program, "u_disk_thickness"), params.disk.thickness);
+
     // Screen parameters
     glUniform2f(glGetUniformLocation(program, "u_resolution"), (float)width, (float)height);
     
     // Camera setup
     double aspect_ratio = (double)width / (double)height;
     double fov = 60.0 * M_PI / 180.0;
-    double theta = 90.0 * M_PI / 180.0;  
+    double theta = 280.0 * M_PI / 180.0; //the disk seems to be edge on at 270 so consider that 0 for mathing it above or below the disk
     double r = params.observer_distance;
     
    // Camera position in spherical coordinates -> Cartesian

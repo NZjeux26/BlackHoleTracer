@@ -83,6 +83,16 @@ int main() {
     }
     printf("Cubemap texture created successfully\n");
 
+    GLuint disk_texture = create_simple_disk_texture();
+    if(disk_texture == 0){
+        fprintf(stderr, "Failed to create disk texture\n");
+        SDL_GL_DeleteContext(gl_context);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+    printf("Accretion Disk texture created successfully\n");
+    
     // Load and compile shaders
     GLuint shader_program = create_shader_program("shaders/vertex.glsl", "shaders/fragment.glsl");
     if (!shader_program) {
@@ -100,7 +110,7 @@ int main() {
     //setup the BH parameters Mass(geometrix units), Spin(% speed of C), Distance (gemoetric units)
     // Note: In geometric units, mass is in terms of Schwarzschild radius (M = 1)
     // Spin is dimensionless (a/M), where -1 ≤ a/M ≤ 1, and distance is in terms of Schwarzschild radius.
-    BlackHoleParams params = init_BH_params(1.0, 0.9, 20.0); // Mass and distance from black hole
+    BlackHoleParams params = init_BH_params(1.0, 0.1, 30.0); // Mass and distance from black hole
 
      // Initialize SDL_image for PNG saving
     if (IMG_Init(IMG_INIT_PNG) == 0) {
@@ -142,10 +152,16 @@ int main() {
             glUseProgram(shader_program);
             // Set shader uniforms
             set_shader_uniforms(shader_program, params, width, height);
+            
             // Bind skybox texture
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_CUBE_MAP, skybox_texture);
             glUniform1i(glGetUniformLocation(shader_program, "u_skybox"), 0);
+
+            // Bind disk texture to texture unit 1
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, disk_texture);
+            glUniform1i(glGetUniformLocation(shader_program, "u_disk_texture"), 1);
 
             // Render fullscreen quad
             glBindVertexArray(VAO);

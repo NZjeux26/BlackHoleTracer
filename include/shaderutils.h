@@ -16,6 +16,7 @@ typedef struct {
 char* load_shader_source(const char* filepath);
 GLuint compile_shader(const char* source, GLenum shader_type);
 GLuint create_shader_program(const char* vertex_path, const char* fragment_path);
+GLuint create_simple_disk_texture();
 void setup_fullscreen_quad(GLuint* VAO, GLuint* VBO);
 void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int height);
 void save_framebuffer_to_png(int width, int height, const char* filename);
