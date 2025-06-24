@@ -20,6 +20,15 @@ uniform float u_disk_opacity;
 uniform float u_disk_temperature_factor;
 uniform float u_disk_thickness;
 
+// Enhanced disk parameters
+float u_time = 1.3;                     // For animation (not used, set to 0.0)
+float u_doppler_factor  = 5.0;           // Doppler factor for relativistic effects
+uniform float u_disk_turbulence;         // Turbulence strength
+uniform float u_disk_spiral_arms;        // Number of spiral arms
+uniform float u_disk_spiral_tightness;   // How tight the spirals are
+uniform float u_disk_brightness;         // Overall disk brightness
+uniform int u_disk_volume_samples;       // Number of volume samples
+
 // Camera parameters
 uniform vec3 u_cam_pos;
 uniform vec3 u_cam_forward;
@@ -51,10 +60,29 @@ float a = u_spin * M; //Spin parameter spin amount * Mass of the black hole
 mat4 diag(vec4 v) {
     return mat4(v.x,0,0,0, 0,v.y,0,0, 0,0,v.z,0, 0,0,0,v.w);
 }
+
 ///Normalizes a 4D vector using the metric tensor g, ensuring it has unit length
 vec4 unit(vec4 v, mat4 g) {
     float norm2 = dot(g * v, v);
     return (norm2 != 0.0) ? v / sqrt(abs(norm2)) : v;
+}
+
+// Enhanced noise functions for procedural disk structure
+float hash(float n) {
+    return fract(sin(n) * 43758.5453123);
+}
+
+float noise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    
+    float n = i.x + i.y * 57.0 + 113.0 * i.z;
+    return mix(
+        mix(mix(hash(n + 0.0), hash(n + 1.0), f.x),
+            mix(hash(n + 57.0), hash(n + 58.0), f.x), f.y),
+        mix(mix(hash(n + 113.0), hash(n + 114.0), f.x),
+            mix(hash(n + 170.0), hash(n + 171.0), f.x), f.y), f.z);
 }
 
 /////////////////////
@@ -84,6 +112,100 @@ float hamiltonian(vec4 x, vec4 p) {
     return 0.5 * dot(inverse(metric(x)) * p, p);
 }
 
+// Enhanced 4-velocity calculation for orbiting disk material
+vec4 getDiskFourVelocity(vec4 pos) {
+    float r = rFromCoords(pos);
+    float r2 = r * r;
+    float a2 = a * a;  // Uses your existing a = u_spin * M
+    float delta = r2 - 2.0 * M * r + a2;
+    float sigma = r2 + a2 * pos.w * pos.w / r2;
+    float A = (r2 + a2) * (r2 + a2) - a2 * delta * pos.w * pos.w / r2;
+    
+    // Frame dragging frequency (depends on your u_spin parameter)
+    float omega_drag = 2.0 * M * a * r / A;
+    
+    // Keplerian frequency
+    float omega_k = sqrt(M) / pow(r, 1.5);
+    
+    // Final orbital frequency (frame dragging dominates as u_spin increases)
+    float orbital_freq = omega_k + omega_drag;
+    
+    // Four-velocity in Kerr-Schild coordinates
+    vec4 u_disk = vec4(1.0, 0.0, 0.0, orbital_freq);
+    
+    // Normalize the four-velocity
+    mat4 g = metric(pos);
+    return unit(u_disk, g);
+}
+
+// Calculate Doppler shift factor
+float calculateDopplerShift(vec4 pos, vec4 photon_momentum, vec4 observer_pos) {
+    mat4 g = metric(pos);
+    
+    // Get disk material four-velocity
+    vec4 u_disk = getDiskFourVelocity(pos);
+    
+    // Observer four-velocity (assumed stationary at camera position)
+    vec4 u_obs = vec4(1.0, 0.0, 0.0, 0.0);
+    u_obs = unit(u_obs, g);
+    
+    // Calculate relative velocity between disk material and observer
+    // Project disk velocity onto the line of sight
+    vec3 disk_pos_3d = pos.yzw;
+    vec3 obs_pos_3d = observer_pos.yzw;
+    vec3 line_of_sight = normalize(obs_pos_3d - disk_pos_3d);
+    
+    // Disk orbital velocity (tangential to radius)
+    float r = rFromCoords(pos);
+    vec3 disk_center = disk_pos_3d;
+    disk_center.z = 0.0; // Project to disk plane
+    vec3 radial_dir = normalize(disk_center);
+    vec3 orbital_dir = vec3(-radial_dir.y, radial_dir.x, 0.0); // Perpendicular to radial
+    
+    // Calculate orbital speed (from four-velocity)
+    float orbital_speed = length(u_disk.yzw);
+    vec3 velocity_3d = orbital_dir * orbital_speed;
+    
+    // Doppler factor based on line-of-sight velocity
+    float v_los = dot(velocity_3d, line_of_sight);
+    
+    // Relativistic Doppler formula: f_obs/f_emit = sqrt((1-β)/(1+β)) where β = v/c
+    // For small velocities: f_obs/f_emit ≈ 1 + v/c
+    float beta = v_los; // v/c (in natural units)
+    float doppler_factor;
+    
+    if (abs(beta) < 0.1) {
+        // Non-relativistic approximation
+        doppler_factor = 1.0 + beta;
+    } else {
+        // Full relativistic formula
+        doppler_factor = sqrt((1.0 - beta) / (1.0 + beta));
+    }
+    
+    // Apply user-controlled Doppler strength
+    return mix(1.0, doppler_factor, u_doppler_factor);
+}
+
+// Fractal Brownian Motion for multi-scale turbulence
+float fbm(vec3 p, int octaves) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+    
+    for (int i = 0; i < octaves; i++) {
+        value += amplitude * noise(p * frequency);
+        amplitude *= 0.5;
+        frequency *= 2.0;
+    }
+    return value;
+}
+
+// Calculate spiral density pattern
+float spiralDensity(vec2 pos, float r) {
+    float angle = atan(pos.y, pos.x);
+    float spiral_angle = u_disk_spiral_arms * (angle - u_disk_spiral_tightness * log(r / u_disk_inner_radius));
+    return 0.5 + 0.5 * cos(spiral_angle);
+}
 /////////////////
 // Geodesic Integration Functions
 /////////////////
@@ -147,95 +269,267 @@ vec3 sample_skybox(vec3 direction) {
     return texture(u_skybox, normalize(direction)).rgb;
 }
 
-// Calculate disk colour with temperature and Doppler effects
-// Calculate disk color with temperature and Doppler effects
-vec3 calculateDiskColour(vec2 diskUV, float blueshift, float r) {
-    // Base disk texture
-    vec3 baseColour = texture(u_disk_texture, diskUV).rgb;
-
-    // Temperature-based emission (simplified blackbody)
-    float temp_factor = u_disk_temperature_factor / pow(r / u_disk_inner_radius, 0.75);
-    vec3 thermal_colour = vec3(1.0, 0.8, 0.6) * temp_factor;
-
-    // Apply Doppler shift (relativistic beaming)
-    vec3 disk_colour = mix(baseColour, thermal_colour, 0.7);
-    disk_colour *= pow(abs(blueshift), 3.0); // Relativistic beaming
-
-    return disk_colour;
+vec3 toSRGB(vec3 linear) {
+    return pow(linear, vec3(1.0 / 2.2));
 }
 
-// Check if a position is within the accretion disk
-// Uses your existing AccretionDisk parameters
-bool isInDisk(vec4 pos) {
+vec3 toneMap(vec3 colour, float exposure) {
+    return vec3(1.0) - exp(-colour * exposure);
+}
+
+// Enhanced disk density function with turbulence and spiral structure
+float getDiskDensity(vec4 pos) {
     float r = rFromCoords(pos);
-    return abs(pos.w) < u_disk_thickness * 0.5 && 
-           r >= u_disk_inner_radius && 
-           r <= u_disk_outer_radius;
+    float r_norm = r / u_disk_inner_radius;
+    
+    // Base density calculation (your existing code)
+    float core_density = 1.0 / pow(r_norm, 0.8);
+    float mid_density = 0.4 / pow(r_norm, 0.5);
+    float outer_density = 0.15 / pow(r_norm, 0.2);
+    
+    float base_density = core_density + mid_density + outer_density;
+    
+    // Smooth outer edge fade
+    float edge_fade = 1.0 - smoothstep(0.6, 1.0, (r - u_disk_inner_radius) / (u_disk_outer_radius - u_disk_inner_radius));
+    base_density *= edge_fade;
+    
+    // Vertical density profile
+    float z_scale = u_disk_thickness * (0.3 + 0.7 * sqrt(r_norm));
+    float vertical_density = exp(-0.5 * pow(pos.w / z_scale, 2.0));
+    
+    // Frame dragging enhancement (depends on u_spin)
+    float r2 = r * r;
+    float a2 = a * a;  // Uses your existing a = u_spin * M
+    
+    // Frame dragging factor (stronger with higher u_spin)
+    float frame_drag_factor = 1.0 + 0.5 * u_spin * M / r;
+    frame_drag_factor = clamp(frame_drag_factor, 0.8, 2.5);
+    
+    // Spiral structure modified by frame dragging
+    vec2 disk_pos = pos.yz;
+    
+    // Frame dragging affects spiral tightness (more spin = tighter spirals)
+    float dragged_spiral_tightness = u_disk_spiral_tightness * (1.0 + u_spin);
+    float angle = atan(disk_pos.y, disk_pos.x);
+    float enhanced_spiral_angle = u_disk_spiral_arms * (angle - dragged_spiral_tightness * log(r / u_disk_inner_radius));
+    float enhanced_spiral = 0.5 + 0.5 * cos(enhanced_spiral_angle);
+    
+    // Multi-scale turbulence
+    vec3 turb_pos = vec3(pos.yz * (0.1 + 0.05 * r_norm), u_time * 0.02);
+    float turbulence = fbm(turb_pos, 4);
+    
+    // Combine all effects
+    float structure_modulation = (0.7 + 0.3 * enhanced_spiral) * (0.6 + 0.4 * turbulence * u_disk_turbulence);
+    
+    // Apply frame dragging to final density
+    float final_density = base_density * vertical_density * structure_modulation * frame_drag_factor * u_disk_opacity;
+    
+    return final_density;
+}
+
+// Enhanced temperature calculation with turbulence
+float getDiskTemperature(vec4 pos, float density, vec4 observer_pos) {
+    float r = rFromCoords(pos);
+    float r_norm = r / u_disk_inner_radius;
+    
+    // Base temperature profile
+    float base_temp = u_disk_temperature_factor * pow(r_norm, -0.8);
+    
+    // Calculate Doppler shift
+    float doppler_shift = calculateDopplerShift(pos, vec4(0.0), observer_pos);
+    
+    // Apply Doppler shift to temperature (frequency shift affects blackbody temperature)
+    float doppler_temp = base_temp * doppler_shift;
+    
+    // Temperature fluctuations from turbulence
+    vec3 temp_pos = vec3(pos.yz * 0.05, u_time * 0.01);
+    float temp_turbulence = fbm(temp_pos, 3);
+    
+    // Hot spots correlate with density
+    float temp_enhancement = 1.0 + 0.5 * density * temp_turbulence;
+    
+    // Final temperature with Doppler effect
+    float final_temp = doppler_temp * temp_enhancement;
+    
+    return clamp(final_temp, 200.0, 1e7);
+}
+
+// Accurate blackbody colour from temperature in Kelvin (1000K–40000K)
+// Returns linear RGB (not gamma corrected)
+vec3 blackbodycolour(float temperature) {
+    float t = clamp(temperature, 1000.0, 40000.0);
+    float x, y;
+
+    // Planckian locus approximation (CIE 1960 UCS to CIE xy)
+    if (t <= 4000.0) {
+        x = -0.2661239e9 / (t*t*t) - 0.2343580e6 / (t*t) + 0.8776956e3 / t + 0.179910;
+    } else {
+        x = -3.0258469e9 / (t*t*t) + 2.1070379e6 / (t*t) + 0.2226347e3 / t + 0.240390;
+    }
+
+    y = -1.1063814 * x * x * x - 1.34811020 * x * x + 2.18555832 * x - 0.20219683;
+
+    // Convert xyY to XYZ (Y = 1.0)
+    float Y = 1.0;
+    float X = Y * x / y;
+    float Z = Y * (1.0 - x - y) / y;
+
+    // Convert XYZ to linear sRGB
+    vec3 rgb;
+    rgb.r =  3.2406 * X - 1.5372 * Y - 0.4986 * Z;
+    rgb.g = -0.9689 * X + 1.8758 * Y + 0.0415 * Z;
+    rgb.b =  0.0557 * X - 0.2040 * Y + 1.0570 * Z;
+
+    // Clamp to valid range (avoid negative RGBs)
+    return clamp(rgb, 0.0, 1.0);
+}
+
+// Volumetric ray marching through the disk
+vec3 volumetricDiskRender(vec4 start_pos, vec4 ray_dir, vec4 momentum, float max_distance, vec4 observer_pos) {
+   // Debug: Return fixed colour to test if function is being called
+    //return vec3(0.5, 0.2, 0.8); // Uncomment this line for basic test
+    
+    vec3 accumulated_colour = vec3(0.0);
+    float accumulated_opacity = 0.0;
+    
+    int samples = max(24, min(u_disk_volume_samples, 128));
+    float step_size = max_distance / float(samples);
+    
+    vec4 current_pos = start_pos;
+
+    for (int i = 0; i < samples; i++) {
+        if (accumulated_opacity > 0.98) break;
+
+        float r = rFromCoords(current_pos);
+        if (r >= u_disk_inner_radius && r <= u_disk_outer_radius &&
+            abs(current_pos.w) < u_disk_thickness * 2.0) {
+
+            // Enhanced density with frame dragging
+            float density = getDiskDensity(current_pos);
+            
+            if (density < 0.0005) {
+                current_pos += ray_dir * step_size;
+                continue;
+            }
+
+            // Enhanced temperature with Doppler shifting
+            float temp = getDiskTemperature(current_pos, density, observer_pos);
+
+            // Emission color (linear RGB)
+            vec3 emission = blackbodycolour(temp);
+
+            // Get Doppler factor for beaming
+            float doppler_factor = calculateDopplerShift(current_pos, vec4(0.0), observer_pos);
+            
+            // Apply Doppler beaming to intensity (affects brightness)
+            float beaming_enhancement = pow(abs(doppler_factor), 2.0); // Relativistic beaming ∝ δ²
+            beaming_enhancement = clamp(beaming_enhancement, 0.1, 8.0);
+            
+            // Intensity scaling with temperature
+            float temp_ratio = temp / 5000.0;
+            float brightness;
+
+            if (temp_ratio > 2.0) {
+                brightness = 4.0 + 2.0 * log(temp_ratio / 2.0);
+            } else {
+                brightness = pow(temp_ratio, 1.8);
+            }
+
+            brightness = clamp(brightness, 0.1, 12.0);
+            emission *= brightness * beaming_enhancement;
+
+            // Opacity calculation
+            float opacity_per_step = density * step_size * 0.8;
+            opacity_per_step = min(opacity_per_step, 0.3);
+
+            float extinction = exp(-accumulated_opacity * 1.5);
+
+            accumulated_colour += emission * opacity_per_step * extinction * u_disk_brightness;
+            accumulated_opacity += opacity_per_step * (1.0 - accumulated_opacity * 0.8);
+        }
+
+        current_pos += ray_dir * step_size;
+    }
+
+    return accumulated_colour;
 }
 
 /*Main raytracing function that follows a light ray through curved spacetime 
 and returns the colour from the skybox or black for captured rays*/
 vec3 trace_kerr_ray(vec3 dir, vec4 camPos, mat4 axes) {
-    vec4 pos = camPos;
-    vec4 dir4D = -axes[0] + vec4(0.0, dir.x, dir.y, dir.z); //changing to this fixed the rotation issue with the camera
+     vec4 pos = camPos;
+    vec4 dir4D = -axes[0] + vec4(0.0, dir.x, dir.y, dir.z);
     vec4 p = metric(pos) * dir4D;
 
-    bool captured = false;
-    bool hitDisk = false;
-    vec4 intersectPos;
-    vec2 diskUV;
-    float blueshift;
+    vec3 disk_contribution = vec3(0.0);
     vec4 final_pos;
+
+    bool in_disk_region = false;
+    vec4 disk_entry_pos;
+    vec4 disk_entry_momentum;
 
     for (int i = 0; i < u_max_steps; i++) {
         vec4 last_pos = pos;
         transportStep(pos, p);
 
-        if(pos.w * last_pos.w < 0.0){
-            // Interpolate to find exact intersection point
-            intersectPos = (pos * abs(last_pos.w) + last_pos * abs(pos.w)) / (abs(last_pos.w) + abs(pos.w));
-            float r = rFromCoords(intersectPos);
+        float r = rFromCoords(pos);
+        bool currently_in_disk = (r >= u_disk_inner_radius &&
+                                  r <= u_disk_outer_radius &&
+                                  abs(pos.w) < u_disk_thickness);
 
-            // Check if intersection is within disk bounds
-            if (r > u_disk_inner_radius && r < u_disk_outer_radius) {
-                hitDisk = true;
-
-                // Calculate UV coordinates for disk texture
-                diskUV = (intersectPos.yz / u_disk_outer_radius + 1.0) * 0.5;
-
-                // Calculate disk velocity for Doppler shift
-                // Simplified Keplerian velocity in Kerr spacetime
-                float sqrt_r = sqrt(r);
-                vec4 diskVel = vec4(r + a/sqrt_r, 
-                                   vec3(-intersectPos.z, intersectPos.y, 0.0) * sign(a) / sqrt_r) / 
-                               sqrt(r*r - 3.0*r + 2.0*a*sqrt_r);
-
-                // Calculate Doppler factor
-                blueshift = 1.0 / dot(p, diskVel);
-                break;
+        if (currently_in_disk && !in_disk_region) {
+            in_disk_region = true;
+            disk_entry_pos = pos;
+            disk_entry_momentum = p;
+        } else if (!currently_in_disk && in_disk_region) {
+            float disk_distance = length(pos.yzw - disk_entry_pos.yzw);
+            if (disk_distance > 0.001 && disk_distance < 1000.0) {
+                // Use enhanced volumetric rendering with Doppler effects
+                disk_contribution += volumetricDiskRender(
+                    disk_entry_pos,
+                    normalize(pos - disk_entry_pos),
+                    disk_entry_momentum,
+                    disk_distance,
+                    camPos  // Pass observer position for Doppler calculation
+                );
             }
+            in_disk_region = false;
         }
+
         if (stopCondition(pos)) {
-            float r = rFromCoords(pos);
-            captured = r < M + sqrt(M*M - a*a);
+            final_pos = pos;
             break;
         }
+
         final_pos = pos;
     }
 
-    if(hitDisk){
-        float r = rFromCoords(intersectPos);
-        return calculateDiskColour(diskUV, blueshift, r);
+    // Handle final disk contribution if still inside
+    if (in_disk_region) {
+        float disk_distance = length(final_pos.yzw - disk_entry_pos.yzw);
+        if (disk_distance > 0.001 && disk_distance < 1000.0) {
+            disk_contribution += volumetricDiskRender(
+                disk_entry_pos,
+                normalize(final_pos - disk_entry_pos),
+                disk_entry_momentum,
+                disk_distance,
+                camPos  // Pass observer position for Doppler calculation
+            );
+        }
     }
 
-    else{
-        // Sample skybox direction
+    // Background determination
+    float final_r = rFromCoords(final_pos);
+    bool captured = final_r < (M + sqrt(M * M - a * a));
+    vec3 background_colour = vec3(0.0);
+
+    if (!captured) {
         vec4 out_dir = inverse(metric(final_pos)) * p;
-        vec3 cube_dir = normalize(vec3(-out_dir.y, out_dir.w, -out_dir.z));//this controls the background skybox
-
-        // In trace_kerr_ray, before the return:
-        return captured ? vec3(0.0) : sample_skybox(cube_dir);
+        vec3 cube_dir = normalize(vec3(-out_dir.y, out_dir.w, -out_dir.z));
+        background_colour = sample_skybox(cube_dir);
     }
+
+    return background_colour + disk_contribution;
 }
 
 void main() {
@@ -264,6 +558,15 @@ void main() {
     
     mat4 camFrame = tetrad(camPos, timeDir, aim, vert);
 
+    //This area is controlling the colour and the background saturation, In reality the brightness of the disk would overwhelm 
+    //the background I'm not happy with the saturated HDR look.
     vec3 colour = trace_kerr_ray(ray_dir, camPos, camFrame);
-    FragColour = vec4(clamp(colour, 0.0, 1.0), 1.0);
+    vec3 mapped = toneMap(colour, 1.0 / 5.0); // <-- Try tuning this number (smaller = darker)
+    vec3 final = toSRGB(mapped);
+    
+    // Colour debugging
+    // float temp = mix(1000.0, 40000.0, TexCoord.x); // left to right: 1000K to 40000K
+    // vec3 final = blackbodycolour(temp);
+    // Temporary test - remove after debugging
+    FragColour = vec4(final, 1.0);
 }

@@ -176,7 +176,6 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     
     // Observer parameters
     glUniform1f(glGetUniformLocation(program, "u_observer_distance"), (float)params.observer_distance);
-    glUniform1f(glGetUniformLocation(program, "u_observer_inclination"), (float)params.observer_inclination);
     
     // Integration parameters
     glUniform1f(glGetUniformLocation(program, "u_eps"), (float)params.eps);
@@ -189,6 +188,13 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     glUniform1f(glGetUniformLocation(program, "u_disk_opacity"), params.disk.opacity);
     glUniform1f(glGetUniformLocation(program, "u_disk_temperature_factor"), params.disk.temperature_factor);
     glUniform1f(glGetUniformLocation(program, "u_disk_thickness"), params.disk.thickness);
+    
+    // Disk addtions for volume rendering
+    glUniform1f(glGetUniformLocation(program, "u_disk_turbulence"), params.disk.turbulence_strength);
+    glUniform1f(glGetUniformLocation(program, "u_disk_spiral_arms"), params.disk.spiral_arms);
+    glUniform1f(glGetUniformLocation(program, "u_disk_spiral_tightness"), params.disk.spiral_tightness);
+    glUniform1f(glGetUniformLocation(program, "u_disk_brightness"), params.disk.brightness);
+    glUniform1f(glGetUniformLocation(program, "u_disk_volume_samples"), params.disk.volume_samples);
 
     // Screen parameters
     glUniform2f(glGetUniformLocation(program, "u_resolution"), (float)width, (float)height);
@@ -196,7 +202,7 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     // Camera setup
     double aspect_ratio = (double)width / (double)height;
     double fov = 60.0 * M_PI / 180.0;
-    double theta = 280.0 * M_PI / 180.0; //the disk seems to be edge on at 270 so consider that 0 for mathing it above or below the disk
+    double theta = 280 * M_PI / 180.0; //the disk seems to be edge on at 270 so consider that 0 for mathing it above or below the disk
     double r = params.observer_distance;
     
    // Camera position in spherical coordinates -> Cartesian

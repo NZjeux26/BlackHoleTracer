@@ -112,6 +112,15 @@ int main() {
     // Spin is dimensionless (a/M), where -1 ≤ a/M ≤ 1, and distance is in terms of Schwarzschild radius.
     BlackHoleParams params = init_BH_params(1.0, 0.1, 30.0); // Mass and distance from black hole
 
+    // For high-quality offline rendering
+    set_disk_rendering_params(&params.disk, 1024, 2.0);  // 128 samples, 2x brightness
+    
+    // For dramatic turbulent disk
+    set_disk_turbulence_params(&params.disk, 10.8, 1.1);  // Strong turbulence, medium speed
+    
+    // For tightly wound spiral arms
+    set_disk_spiral_params(&params.disk, 3, 0.9);  // 3 arms, tight winding
+
      // Initialize SDL_image for PNG saving
     if (IMG_Init(IMG_INIT_PNG) == 0) {
         fprintf(stderr, "IMG_Init failed: %s\n", IMG_GetError());
