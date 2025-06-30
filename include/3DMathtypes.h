@@ -5,6 +5,10 @@ typedef struct {
     double x, y, z;
 } Vec3;
 
+typedef struct {
+    double t, x, y, z;
+} Vec4;
+
 Vec3 vec3_add(Vec3 a, Vec3 b);
 Vec3 vec3_add3(Vec3 a, Vec3 b, Vec3 c);
 Vec3 vec3_sub(Vec3 a, Vec3 b);

@@ -22,7 +22,7 @@ uniform float u_disk_thickness;
 
 // Enhanced disk parameters
 float u_time = 1.3;                     // For animation (not used, set to 0.0)
-float u_doppler_factor  = 5.0;           // Doppler factor for relativistic effects
+float u_doppler_factor  = 2.0;           // Doppler factor for relativistic effects
 uniform float u_disk_turbulence;         // Turbulence strength
 uniform float u_disk_spiral_arms;        // Number of spiral arms
 uniform float u_disk_spiral_tightness;   // How tight the spirals are
@@ -126,10 +126,10 @@ vec4 getDiskFourVelocity(vec4 pos) {
     
     // Keplerian frequency
     float omega_k = sqrt(M) / pow(r, 1.5);
-    
+  
     // Final orbital frequency (frame dragging dominates as u_spin increases)
     float orbital_freq = omega_k + omega_drag;
-    
+ 
     // Four-velocity in Kerr-Schild coordinates
     vec4 u_disk = vec4(1.0, 0.0, 0.0, orbital_freq);
     
@@ -273,8 +273,9 @@ vec3 toSRGB(vec3 linear) {
     return pow(linear, vec3(1.0 / 2.2));
 }
 
-vec3 toneMap(vec3 colour, float exposure) {
-    return vec3(1.0) - exp(-colour * exposure);
+vec3 toneMap(vec3 colour) {
+     // ACES approximation by Krzysztof Narkowicz
+    return clamp((colour * (2.51 * colour + 0.03)) / (colour * (2.43 * colour + 0.59) + 0.14), 0.0, 1.0);
 }
 
 // Enhanced disk density function with turbulence and spiral structure
@@ -302,7 +303,7 @@ float getDiskDensity(vec4 pos) {
     float a2 = a * a;  // Uses your existing a = u_spin * M
     
     // Frame dragging factor (stronger with higher u_spin)
-    float frame_drag_factor = 1.0 + 0.5 * u_spin * M / r;
+    float frame_drag_factor = 1.0 + 0.2 * a / (r * r * r);
     frame_drag_factor = clamp(frame_drag_factor, 0.8, 2.5);
     
     // Spiral structure modified by frame dragging
@@ -551,6 +552,7 @@ void main() {
     // Note: u_cam_pos is in the format (t, x, y, z) where t is time
     // and (x, y, z) are the spatial coordinates.
     vec4 camPos = vec4(0.0, u_cam_pos.x, u_cam_pos.y, u_cam_pos.z);
+    
     // Map 3D camera vectors to 4D space
     vec4 aim = vec4(0.0, u_cam_forward.x, u_cam_forward.y, u_cam_forward.z);
     vec4 vert = vec4(0.0, u_cam_up.x, u_cam_up.y, u_cam_up.z);
@@ -561,7 +563,8 @@ void main() {
     //This area is controlling the colour and the background saturation, In reality the brightness of the disk would overwhelm 
     //the background I'm not happy with the saturated HDR look.
     vec3 colour = trace_kerr_ray(ray_dir, camPos, camFrame);
-    vec3 mapped = toneMap(colour, 1.0 / 5.0); // <-- Try tuning this number (smaller = darker)
+    colour *= 1.0 / 5.0;
+    vec3 mapped = toneMap(colour); // <-- Try tuning this number (smaller = darker)
     vec3 final = toSRGB(mapped);
     
     // Colour debugging

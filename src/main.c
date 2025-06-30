@@ -110,16 +110,16 @@ int main() {
     //setup the BH parameters Mass(geometrix units), Spin(% speed of C), Distance (gemoetric units)
     // Note: In geometric units, mass is in terms of Schwarzschild radius (M = 1)
     // Spin is dimensionless (a/M), where -1 ≤ a/M ≤ 1, and distance is in terms of Schwarzschild radius.
-    BlackHoleParams params = init_BH_params(1.0, 0.1, 30.0); // Mass and distance from black hole
+    BlackHoleParams params = init_BH_params(1.0, 0.75, 30.0); // Mass and distance from black hole
 
     // For high-quality offline rendering
-    set_disk_rendering_params(&params.disk, 1024, 2.0);  // 128 samples, 2x brightness
+    set_disk_rendering_params(&params.disk, 2048, 5.0);  // 128 samples, 2x brightness
     
     // For dramatic turbulent disk
-    set_disk_turbulence_params(&params.disk, 10.8, 1.1);  // Strong turbulence, medium speed
+    set_disk_turbulence_params(&params.disk, 10000.8, 1000.1);  // Strong turbulence, medium speed
     
     // For tightly wound spiral arms
-    set_disk_spiral_params(&params.disk, 3, 0.9);  // 3 arms, tight winding
+    set_disk_spiral_params(&params.disk, 6, 0.3);  // 3 arms, tight winding
 
      // Initialize SDL_image for PNG saving
     if (IMG_Init(IMG_INIT_PNG) == 0) {
