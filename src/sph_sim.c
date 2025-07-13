@@ -1,13 +1,30 @@
 #include "sph_sim.h"
+#include <GL/glew.h>
+#include <SDL_opengl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <omp.h>
 
 //========================================
 // System Management Functions
 //========================================
 
 SPHSystem* sph_create_system(int max_particles, BlackHoleParams* black_hole) {
+    
+    omp_set_num_threads(8); 
+    printf("SPH System: OpenMP enabled with %d threads\n", omp_get_num_threads());
+    
+      // Test if threads actually work
+    printf("Testing OpenMP threads:\n");
+    #pragma omp parallel
+    {
+        #pragma omp critical
+        {
+            printf("  Thread %d of %d is working\n", omp_get_thread_num(), omp_get_num_threads());
+        }
+    }
+
     // Validate input parameters
     if (max_particles <= 0 || max_particles > MAX_PARTICLES) {
         fprintf(stderr, "Error: Invalid max_particles (%d). Must be between 1 and %d\n", 
@@ -54,7 +71,7 @@ SPHSystem* sph_create_system(int max_particles, BlackHoleParams* black_hole) {
     system->surface_tension = SURFACE_TENSION;
     system->thermal_conductivity = THERMAL_CONDUCTIVITY;
 
-    // initialise time stepping parameters
+    // initialise time stepping parameters ** these need to match those in BlackholeParams
     system->dt = 0.001;  // 1ms default time step
     system->current_time = 0.0;
     system->max_iterations = 1000;
@@ -155,7 +172,6 @@ void sph_update_system(SPHSystem* system, double dt) {
     }
 
     if (system->particle_count == 0) {
-        // Nothing to update
         return;
     }
 
@@ -163,11 +179,8 @@ void sph_update_system(SPHSystem* system, double dt) {
         fprintf(stderr, "Warning: Invalid time step %.6f, skipping update\n", dt);
         return;
     }
-
-    // Store the time step
-    double original_dt = dt; //this isn't used
     
-    // Use adaptive time stepping if enabled
+    // Use adaptive time stepping if enabled (sequential - fast operation)
     if (system->adaptive_time_step) {
         double adaptive_dt = sph_calculate_adaptive_time_step(system);
         if (adaptive_dt > 0.0 && adaptive_dt < dt) {
@@ -175,14 +188,14 @@ void sph_update_system(SPHSystem* system, double dt) {
         }
     }
 
-    // Store time step in system
     system->dt = dt;
 
-    // Clear and rebuild spatial hash table for neighbor finding
+    // Clear and rebuild spatial hash table (sequential - but optimize this)
     sph_clear_hash_table(system);
-    sph_build_hash_table(system);
+    sph_build_hash_table(system);  // Make this parallel
 
-    // Find neighbors for all particles
+    // Find neighbors for all particles (already parallel - good!)
+    #pragma omp parallel for schedule(dynamic, 64) num_threads(omp_get_max_threads())
     for (int i = 0; i < system->particle_count; i++) {
         if (system->particles[i].flags & PARTICLE_ACTIVE) {
             sph_find_neighbors(system, i);
@@ -190,63 +203,76 @@ void sph_update_system(SPHSystem* system, double dt) {
     }
     system->neighbor_searches += system->particle_count;
 
-    // Update smoothing lengths based on local particle density
+    // Update smoothing lengths (parallelize this)
     sph_update_smoothing_lengths(system);
 
-    // Calculate fluid properties
+    // Calculate fluid properties (parallelize these)
     sph_calculate_density(system);
     system->density_calculations += system->particle_count;
     
     sph_calculate_pressure(system);
     sph_calculate_temperature(system);
 
-    // Calculate forces
+    // Calculate forces (parallelize these)
     sph_calculate_forces(system);
     sph_calculate_viscosity_forces(system);
     sph_calculate_surface_tension_forces(system);
 
-    // Apply thermal effects
+    // Apply thermal effects (parallelize these)
     sph_calculate_thermal_diffusion(system);
     sph_apply_radiative_cooling(system, dt);
     sph_apply_viscous_heating(system, dt);
 
-    // Integrate equations of motion
-    // Use RK4 for better accuracy with black hole dynamics
+    // Integrate equations of motion (parallelize this)
     sph_integrate_rk4(system, dt);
 
-    // Apply boundary conditions
+    // Apply boundary conditions (parallelize this)
     sph_apply_boundary_conditions(system);
 
-    // Check for particles crossing event horizon
+    // Check for particles crossing event horizon (OPTIMIZED VERSION)
     if (system->black_hole) {
-        for (int i = system->particle_count - 1; i >= 0; i--) {
+        // Use reduction instead of critical section
+        int accreted_count = 0;
+        
+        #pragma omp parallel for schedule(static) reduction(+:accreted_count)
+        for (int i = 0; i < system->particle_count; i++) {
             if (system->particles[i].flags & PARTICLE_ACTIVE) {
                 if (sph_check_event_horizon_crossing(system->particles[i].position, 
                                                    system->black_hole)) {
-                    // Mark particle as accreted
+                    // Mark particle as accreted (no critical section needed)
                     system->particles[i].flags |= PARTICLE_ACCRETING;
                     system->particles[i].flags &= ~PARTICLE_ACTIVE;
+                    accreted_count++;
+                }
+            }
+        }
+        
+        // Only print if particles were accreted
+        if (accreted_count > 0) {
+            printf("Accreted %d particles this timestep\n", accreted_count);
+        }
+    }
+
+    // Update simulation time (sequential - trivial operation)
+    system->current_time += dt;
+    system->last_update_time = dt;
+
+    // Validation (parallelize this too)
+    #ifdef DEBUG
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < system->particle_count; i++) {
+        if (system->particles[i].flags & PARTICLE_ACTIVE) {
+            if (!sph_validate_particle_state(system, i)) {
+                #pragma omp critical
+                {
+                    fprintf(stderr, "Warning: Particle %d failed validation at time %.6f\n", 
+                            i, system->current_time);
                 }
             }
         }
     }
-
-    // Update simulation time
-    system->current_time += dt;
-    system->last_update_time = dt;
-
-    // Validate system state in debug builds
-    #ifdef DEBUG
-    for (int i = 0; i < system->particle_count; i++) {
-        if (system->particles[i].flags & PARTICLE_ACTIVE) {
-            if (!sph_validate_particle_state(system, i)) {
-                fprintf(stderr, "Warning: Particle %d failed validation at time %.6f\n", 
-                        i, system->current_time);
-            }
-        }
-    }
     
-    // Check conservation laws periodically
+    // Check conservation laws periodically (keep sequential for now)
     static int conservation_check_counter = 0;
     if (++conservation_check_counter >= 100) {
         sph_check_conservation_laws(system);
@@ -254,12 +280,6 @@ void sph_update_system(SPHSystem* system, double dt) {
         conservation_check_counter = 0;
     }
     #endif
-
-    // Update render buffer if VBO exists
-    if (system->render_vbo != 0) {
-        // This would typically update the GPU buffer
-        // Implementation depends on rendering system
-    }
 }
 
 //========================================
@@ -718,7 +738,7 @@ void sph_initialise_thermal_equilibrium(SPHSystem* system) {
                            particle->position.y * particle->position.y);
         
         // Simplified temperature profile (decreases with radius) ***This or maybe the blackbody code I have
-        double base_temp = 1000.0; // K
+        double base_temp = 2000.0; // K
         double temp_scale = pow(r_cyl / 10.0, -0.75); // r^(-3/4) scaling
         particle->temperature = base_temp * temp_scale;
         
@@ -850,7 +870,7 @@ void sph_build_hash_table(SPHSystem* system) {
         }
     }
 }
-
+//US Spelling
 void sph_find_neighbors(SPHSystem* system, int particle_index) {
     if (!system || particle_index < 0 || particle_index >= system->particle_count) return;
     
@@ -1079,7 +1099,7 @@ void sph_calculate_density(SPHSystem* system) {
     
     // Reset performance counter
     system->density_calculations = 0;
-    
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < system->particle_count; i++) {
         SPHParticle* particle_i = &system->particles[i];
         
@@ -1121,7 +1141,8 @@ void sph_calculate_density(SPHSystem* system) {
 // Calculate pressure from density using equation of state
 void sph_calculate_pressure(SPHSystem* system) {
     if (!system) return;
-    
+
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < system->particle_count; i++) {
         SPHParticle* particle = &system->particles[i];
         
@@ -1156,6 +1177,7 @@ void sph_calculate_pressure(SPHSystem* system) {
 void sph_calculate_forces(SPHSystem* system) {
     if (!system) return;
     
+    #pragma omp parallel for schedule(dynamic)
     // Reset accelerations
     for (int i = 0; i < system->particle_count; i++) {
         if (system->particles[i].flags & PARTICLE_ACTIVE) {
@@ -1164,6 +1186,7 @@ void sph_calculate_forces(SPHSystem* system) {
     }
     
     // Calculate pairwise forces
+    #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < system->particle_count; i++) {
         SPHParticle* particle_i = &system->particles[i];
         
@@ -1217,6 +1240,7 @@ void sph_calculate_forces(SPHSystem* system) {
 void sph_calculate_viscosity_forces(SPHSystem* system) {
     if (!system || system->viscosity_coeff <= 0.0) return;
     
+    #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < system->particle_count; i++) {
         SPHParticle* particle_i = &system->particles[i];
         
@@ -1272,6 +1296,7 @@ void sph_calculate_viscosity_forces(SPHSystem* system) {
 void sph_calculate_surface_tension_forces(SPHSystem* system) {
     if (!system || system->surface_tension <= 0.0) return;
     
+    #pragma omp parallel for schedule(dynamic)
     // First pass: calculate color field gradient and laplacian
     for (int i = 0; i < system->particle_count; i++) {
         SPHParticle* particle_i = &system->particles[i];
@@ -1353,6 +1378,7 @@ void sph_calculate_surface_tension_forces(SPHSystem* system) {
 void sph_calculate_thermal_diffusion(SPHSystem* system) {
     if (!system || system->thermal_conductivity <= 0.0) return;
     
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < system->particle_count; i++) {
         SPHParticle* particle_i = &system->particles[i];
         
@@ -1393,6 +1419,7 @@ void sph_calculate_thermal_diffusion(SPHSystem* system) {
         particle_i->thermal_diffusion = thermal_diffusion_rate;
     }
 }
+
 //========================================
 // Black Hole Physics
 //========================================
@@ -1497,8 +1524,8 @@ double sph_calculate_orbital_velocity_kerr(double r, double theta, BlackHolePara
     if (r < r_isco) r = r_isco;
     
     // Keplerian velocity with relativistic corrections
-    double r2 = r * r;
-    double r3 = r2 * r;
+   // double r2 = r * r;
+    //double r3 = r2 * r;
     
     // Leading term (Keplerian)
     double v_kepler = sqrt(M / r);
@@ -1524,7 +1551,7 @@ double sph_calculate_binding_energy(Vec3 position, Vec3 velocity, BlackHoleParam
     
     // Convert to spherical coordinates
     double theta = acos(position.z / r);
-    double phi = atan2(position.y, position.x);
+   // double phi = atan2(position.y, position.x); //not used
     
     double cos_theta = cos(theta);
     double sin_theta = sin(theta);
@@ -1609,7 +1636,7 @@ void sph_integrate_rk4(SPHSystem* system, double dt) {
         fprintf(stderr, "Memory allocation failed in RK4 integration\n");
         goto cleanup;
     }
-    
+    #pragma omp parallel for schedule(static)
     // Store original state
     for (int i = 0; i < system->particle_count; i++) {
         if (system->particles[i].flags & PARTICLE_ACTIVE) {
@@ -1944,6 +1971,7 @@ void sph_apply_boundary_conditions(SPHSystem* system) {
     const double Y_MIN = -50.0, Y_MAX = 50.0;
     const double Z_MIN = -10.0, Z_MAX = 10.0;
     
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < system->particle_count; i++) {
         SPHParticle* particle = &system->particles[i];
         
@@ -2134,7 +2162,7 @@ void sph_calculate_temperature(SPHSystem* system) {
         }
         
         // Calculate thermal velocity for sound speed
-        double thermal_velocity = sqrt(particle->temperature / 1000.0); // Simplified
+        double thermal_velocity = sqrt(particle->temperature / 1000.0); // Simplified NOT USED
         
         // Update smoothing length based on thermal state (hotter = larger h)
         if (particle->flags & PARTICLE_HOT) {
@@ -2243,6 +2271,7 @@ void sph_apply_radiative_cooling(SPHSystem* system, double dt) {
 void sph_apply_viscous_heating(SPHSystem* system, double dt) {
     if (!system || dt <= 0.0) return;
     
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < system->particle_count; i++) {
         SPHParticle* particle_i = &system->particles[i];
         
@@ -2288,7 +2317,7 @@ void sph_apply_viscous_heating(SPHSystem* system, double dt) {
         // Additional sources of viscous heating
         
         // Bulk viscosity heating (from compression/expansion)
-        Vec3 velocity_gradient = {0.0, 0.0, 0.0};
+        Vec3 velocity_gradient = {0.0, 0.0, 0.0}; //NOT USED
         double divergence = 0.0;
         
         for (int n = 0; n < particle_i->neighbor_count; n++) {
@@ -2369,7 +2398,89 @@ void sph_apply_viscous_heating(SPHSystem* system, double dt) {
 }
 
 //========================================
-// Stub implementations for missing SPH functions
-// These provide basic functionality to make the code compile and link
+// Rendering Functions
 //========================================
+
+// // Initialize OpenGL resources for particle rendering
+// void sph_initialize_renderer(SPHSystem* system) {
+//     if (!system) {
+//         fprintf(stderr, "Invalid SPH system for renderer initialization\n");
+//         return;
+//     }
+    
+//     // Create VBO for particle data
+//     glGenBuffers(1, &system->render_vbo);
+//     if (system->render_vbo == 0) {
+//         fprintf(stderr, "Failed to create particle render VBO\n");
+//         return;
+//     }
+    
+//     // Bind and allocate buffer
+//     glBindBuffer(GL_ARRAY_BUFFER, system->render_vbo);
+//     glBufferData(GL_ARRAY_BUFFER, 
+//                  system->max_particles * sizeof(RenderParticle), 
+//                  NULL, GL_DYNAMIC_DRAW);
+    
+//     // Check for OpenGL errors
+//     GLenum error = glGetError();
+//     if (error != GL_NO_ERROR) {
+//         fprintf(stderr, "OpenGL error during particle VBO creation: %d\n", error);
+//     }
+    
+//     // Unbind buffer
+//     glBindBuffer(GL_ARRAY_BUFFER, 0);
+    
+//     printf("SPH renderer initialized with VBO ID: %u\n", system->render_vbo);
+// }
+
+// // In sph_update_render_buffer() - CORRECTED VERSION:
+// void sph_update_render_buffer(SPHSystem* system, RenderParticle* buffer) {
+//     for (int i = 0; i < system->particle_count; i++) {
+//         SPHParticle* particle = &system->particles[i];
+//         RenderParticle* render_particle = &buffer[i];
+        
+//         // Position (unchanged)
+//         render_particle->x = (float)particle->position.x;
+//         render_particle->y = (float)particle->position.y;
+//         render_particle->z = (float)particle->position.z;
+        
+//         // Size (unchanged)
+//         render_particle->size = (float)particle->smoothing_length;
+        
+//         // STORE RAW PHYSICAL DATA instead of colors:
+//         render_particle->r = (float)particle->temperature;  // Raw temperature
+//         render_particle->g = (float)particle->density;      // Raw density  
+//         render_particle->b = (float)particle->orbital_velocity; // Or other property
+//         render_particle->a = (float)particle->flags;        // Particle flags
+//     }
+// }
+
+// // Render particles using the uploaded data
+// void sph_render_particles(SPHSystem* system) {
+//    if (!system) {
+//         fprintf(stderr, "Invalid system for particle rendering\n");
+//         return;
+//     }
+    
+//     // For raytracing-only rendering, we don't need to draw geometry
+//     // The particle data is already uploaded to GPU textures via upload_sph_particles_to_gpu()
+//     // and bound to the shader via bind_sph_textures_to_shader()
+    
+//     // Just update the render buffer for consistency (optional)
+//     if (system->render_vbo != 0) {
+//         RenderParticle* render_buffer = malloc(system->particle_count * sizeof(RenderParticle));
+//         sph_update_render_buffer(system, render_buffer);
+        
+//         glBindBuffer(GL_ARRAY_BUFFER, system->render_vbo);
+//         glBufferSubData(GL_ARRAY_BUFFER, 0, 
+//                         system->particle_count * sizeof(RenderParticle), 
+//                         render_buffer);
+//         glBindBuffer(GL_ARRAY_BUFFER, 0);
+        
+//         free(render_buffer);
+//     }
+    
+//     // No geometry rendering needed for raytracing approach
+//     printf("SPH particles prepared for raytracing (count: %d)\n", system->particle_count);
+// }
 

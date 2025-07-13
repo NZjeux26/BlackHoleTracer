@@ -32,33 +32,8 @@ BlackHoleParams init_BH_params(double mass, double spin, double observer_distanc
 }
 
 void init_default_disk(AccretionDisk* disk) {
-     // Set reasonable default values
-    disk->opacity = 0.2;
-    disk->brightness = 0.01;
-    disk->turbulence_strength = 0.9;
-    disk->spiral_arms = 4;
-    disk->spiral_tightness = 0.5;
-    disk->rotation_speed = 4.0;
-    disk->turbulence_speed = 0.4;
-   // disk->volume_samples = 64; // Good for offline rendering
-    disk->self_shadowing = 0.5;
-    disk->magnetic_field_strength = 2.0;
-    disk->viscosity_alpha = 0.8; 
-}
+   
 
-void set_disk_turbulence_params(AccretionDisk* disk, double strength, double speed) {
-    disk->turbulence_strength = fmax(0.0, fmin(1.0, strength));
-    disk->turbulence_speed = fmax(0.0, speed);
-}
-
-void set_disk_spiral_params(AccretionDisk* disk, int arms, double tightness) {
-    disk->spiral_arms = fmax(1, fmin(8, arms));
-    disk->spiral_tightness = fmax(0.1, fmin(2.0, tightness));
-}
-
-void set_disk_rendering_params(AccretionDisk* disk, int volume_samples, double brightness) {
-    disk->volume_samples = fmax(16, fmin(256, volume_samples));
-    disk->brightness = fmax(0.1, brightness);
 }
 
 void calculate_recommended_disk_params(BlackHoleParams* params) {
@@ -73,8 +48,11 @@ void calculate_recommended_disk_params(BlackHoleParams* params) {
     params->disk.thickness = 0.1 + 0.4 * pow(params->isco_radius_prograde / 6.0, 0.5); // Thicker for slower-spinning BHs
     
     // Adjust temperature
-    params->disk.temperature_factor = 8000;
-    
+    params->disk.temperature_factor = 13000;
+      
+    params->disk.opacity = 0.2;
+    params->disk.brightness = 10.1;
+
     // More turbulence for higher spin
     params->disk.turbulence_strength = 0.2 + 0.3 * fabs(params->spin);
     

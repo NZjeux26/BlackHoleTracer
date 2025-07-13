@@ -83,11 +83,11 @@ typedef struct {
 } SPHParticle;
 
 // Renderer-side packed particle for VBO upload
-typedef struct {
-    float x, y, z;      // World position
-    float size;         // Point size or quad scale
-    float r, g, b, a;   // Color
-} RenderParticle;
+// typedef struct {
+//     float x, y, z;      // World position
+//     float size;         // Point size or quad scale
+//     float r, g, b, a;   // Color
+// } RenderParticle;
 
 // Spatial hash cell
 typedef struct {
@@ -198,27 +198,21 @@ void sph_apply_radiative_cooling(SPHSystem* system, double dt);
 void sph_apply_viscous_heating(SPHSystem* system, double dt);
 
 // Rendering
-void sph_initialize_renderer(SPHSystem* system);
-void sph_update_render_buffer(SPHSystem* system, RenderParticle* buffer);
-void sph_render_particles(SPHSystem* system);
+// void sph_initialize_renderer(SPHSystem* system);
+// void sph_update_render_buffer(SPHSystem* system, RenderParticle* buffer);
+// void sph_render_particles(SPHSystem* system);
 
-// Coordinate transforms
-Vec3 sph_cartesian_to_boyer_lindquist(Vec3 cartesian);
-Vec3 sph_boyer_lindquist_to_cartesian(Vec3 bl_coords);
-Vec3 sph_velocity_cartesian_to_bl(Vec3 vel_cart, Vec3 position);
-Vec3 sph_velocity_bl_to_cartesian(Vec3 vel_bl, Vec3 position);
+// // Utility
+// void sph_print_system_stats(SPHSystem* system);
+// void sph_export_particles_to_file(SPHSystem* system, const char* filename);
+// void sph_import_particles_from_file(SPHSystem* system, const char* filename);
+// double sph_get_kinetic_energy(SPHSystem* system);
+// double sph_get_potential_energy(SPHSystem* system);
+// double sph_get_thermal_energy(SPHSystem* system);
 
-// Utility
-void sph_print_system_stats(SPHSystem* system);
-void sph_export_particles_to_file(SPHSystem* system, const char* filename);
-void sph_import_particles_from_file(SPHSystem* system, const char* filename);
-double sph_get_kinetic_energy(SPHSystem* system);
-double sph_get_potential_energy(SPHSystem* system);
-double sph_get_thermal_energy(SPHSystem* system);
-
-// Debug
-bool sph_validate_particle_state(SPHSystem* system, int particle_index);
-void sph_check_conservation_laws(SPHSystem* system);
-void sph_detect_numerical_instabilities(SPHSystem* system);
+// // Debug
+// bool sph_validate_particle_state(SPHSystem* system, int particle_index);
+// void sph_check_conservation_laws(SPHSystem* system);
+// void sph_detect_numerical_instabilities(SPHSystem* system);
 
 #endif // SPH_H

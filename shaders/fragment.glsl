@@ -6,28 +6,30 @@ in vec2 TexCoord;
 
 // Black hole parameters
 uniform float u_mass;
-uniform float u_schwarzschild_radius; //not needed anymore
+uniform float u_spin;  // Kerr spin parameter (a)
 uniform float u_observer_distance;
 uniform float u_dtau;
 uniform float u_eps;
 uniform int u_max_steps;
-uniform float u_spin;  // Kerr spin parameter (a)
+
+
+// SPH particle data
+uniform sampler2D u_particle_positions;    // RGBA32F texture: xyz = position, w = mass
+uniform sampler2D u_particle_velocities;   // RGBA32F texture: xyz = velocity, w = density
+uniform sampler2D u_particle_properties;   // RGBA32F texture: x = temperature, y = pressure, z = smoothing_length, w = flags
+uniform sampler2D u_particle_thermal;      // RGBA32F texture: x = thermal_energy, y = radiative_cooling, z = heating_rate, w = unused
+uniform int u_particle_count;              // Total number of active particles
+uniform int u_particle_texture_size;       // Size of particle texture (sqrt of max particles)
 
 // Accretion disk parameters
 uniform float u_disk_inner_radius;
 uniform float u_disk_outer_radius;
 uniform float u_disk_opacity;
-uniform float u_disk_temperature_factor;
 uniform float u_disk_thickness;
 
 // Enhanced disk parameters
-float u_time = 1.3;                     // For animation (not used, set to 0.0)
-float u_doppler_factor  = 2.0;           // Doppler factor for relativistic effects
-uniform float u_disk_turbulence;         // Turbulence strength
-uniform float u_disk_spiral_arms;        // Number of spiral arms
-uniform float u_disk_spiral_tightness;   // How tight the spirals are
+uniform float u_doppler_factor;           // Doppler factor for relativistic effects
 uniform float u_disk_brightness;         // Overall disk brightness
-uniform int u_disk_volume_samples;       // Number of volume samples
 
 // Camera parameters
 uniform vec3 u_cam_pos;
@@ -37,24 +39,16 @@ uniform vec3 u_cam_right;
 uniform float u_fov;
 uniform float u_aspect;
 
-// Screen parameters
-uniform vec2 u_resolution;
-
 // Skybox texture
 uniform samplerCube u_skybox;
-uniform sampler2D u_disk_texture;  // Accretion disk texture
 
-//Cconstants
+//Constants
 float M = u_mass; // Mass of the black hole
 float a = u_spin * M; //Spin parameter spin amount * Mass of the black hole
 
 //////////////////////////////////////////////////////////////
 // Kerr Metric in Kerr-Schild Coordinates
 //////////////////////////////////////////////////////////////
-
-///////////////
-// Utility Functions
-/////////////////
 
 /*Computes the inverse of a 4x4 matrix*/
 mat4 diag(vec4 v) {
@@ -65,24 +59,6 @@ mat4 diag(vec4 v) {
 vec4 unit(vec4 v, mat4 g) {
     float norm2 = dot(g * v, v);
     return (norm2 != 0.0) ? v / sqrt(abs(norm2)) : v;
-}
-
-// Enhanced noise functions for procedural disk structure
-float hash(float n) {
-    return fract(sin(n) * 43758.5453123);
-}
-
-float noise(vec3 p) {
-    vec3 i = floor(p);
-    vec3 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    
-    float n = i.x + i.y * 57.0 + 113.0 * i.z;
-    return mix(
-        mix(mix(hash(n + 0.0), hash(n + 1.0), f.x),
-            mix(hash(n + 57.0), hash(n + 58.0), f.x), f.y),
-        mix(mix(hash(n + 113.0), hash(n + 114.0), f.x),
-            mix(hash(n + 170.0), hash(n + 171.0), f.x), f.y), f.z);
 }
 
 /////////////////////
@@ -96,6 +72,7 @@ float rFromCoords(vec4 pos) {
     float r2 = 0.5 * (rho2 + sqrt(rho2*rho2 + 4.0*a*a*p.z*p.z));
     return sqrt(r2);
 }
+
 /*Computes the Kerr spacetime metric tensor at a given 4D position,
 describing the curvature of spacetime around the rotating black hole*/
 mat4 metric(vec4 pos) {
@@ -106,106 +83,13 @@ mat4 metric(vec4 pos) {
     float f = 2.0 * M * r / (r*r + a*a * pos.a*pos.a / (r*r));
     return f * mat4(k.x*k, k.y*k, k.z*k, k.w*k) + diag(vec4(-1,1,1,1));
 }
+
 /*Calculates the Hamiltonian (total energy) of a photon at position x with momentum p, 
 used for geodesic integration*/
 float hamiltonian(vec4 x, vec4 p) {
     return 0.5 * dot(inverse(metric(x)) * p, p);
 }
 
-// Enhanced 4-velocity calculation for orbiting disk material
-vec4 getDiskFourVelocity(vec4 pos) {
-    float r = rFromCoords(pos);
-    float r2 = r * r;
-    float a2 = a * a;  // Uses your existing a = u_spin * M
-    float delta = r2 - 2.0 * M * r + a2;
-    float sigma = r2 + a2 * pos.w * pos.w / r2;
-    float A = (r2 + a2) * (r2 + a2) - a2 * delta * pos.w * pos.w / r2;
-    
-    // Frame dragging frequency (depends on your u_spin parameter)
-    float omega_drag = 2.0 * M * a * r / A;
-    
-    // Keplerian frequency
-    float omega_k = sqrt(M) / pow(r, 1.5);
-  
-    // Final orbital frequency (frame dragging dominates as u_spin increases)
-    float orbital_freq = omega_k + omega_drag;
- 
-    // Four-velocity in Kerr-Schild coordinates
-    vec4 u_disk = vec4(1.0, 0.0, 0.0, orbital_freq);
-    
-    // Normalize the four-velocity
-    mat4 g = metric(pos);
-    return unit(u_disk, g);
-}
-
-// Calculate Doppler shift factor
-float calculateDopplerShift(vec4 pos, vec4 photon_momentum, vec4 observer_pos) {
-    mat4 g = metric(pos);
-    
-    // Get disk material four-velocity
-    vec4 u_disk = getDiskFourVelocity(pos);
-    
-    // Observer four-velocity (assumed stationary at camera position)
-    vec4 u_obs = vec4(1.0, 0.0, 0.0, 0.0);
-    u_obs = unit(u_obs, g);
-    
-    // Calculate relative velocity between disk material and observer
-    // Project disk velocity onto the line of sight
-    vec3 disk_pos_3d = pos.yzw;
-    vec3 obs_pos_3d = observer_pos.yzw;
-    vec3 line_of_sight = normalize(obs_pos_3d - disk_pos_3d);
-    
-    // Disk orbital velocity (tangential to radius)
-    float r = rFromCoords(pos);
-    vec3 disk_center = disk_pos_3d;
-    disk_center.z = 0.0; // Project to disk plane
-    vec3 radial_dir = normalize(disk_center);
-    vec3 orbital_dir = vec3(-radial_dir.y, radial_dir.x, 0.0); // Perpendicular to radial
-    
-    // Calculate orbital speed (from four-velocity)
-    float orbital_speed = length(u_disk.yzw);
-    vec3 velocity_3d = orbital_dir * orbital_speed;
-    
-    // Doppler factor based on line-of-sight velocity
-    float v_los = dot(velocity_3d, line_of_sight);
-    
-    // Relativistic Doppler formula: f_obs/f_emit = sqrt((1-β)/(1+β)) where β = v/c
-    // For small velocities: f_obs/f_emit ≈ 1 + v/c
-    float beta = v_los; // v/c (in natural units)
-    float doppler_factor;
-    
-    if (abs(beta) < 0.1) {
-        // Non-relativistic approximation
-        doppler_factor = 1.0 + beta;
-    } else {
-        // Full relativistic formula
-        doppler_factor = sqrt((1.0 - beta) / (1.0 + beta));
-    }
-    
-    // Apply user-controlled Doppler strength
-    return mix(1.0, doppler_factor, u_doppler_factor);
-}
-
-// Fractal Brownian Motion for multi-scale turbulence
-float fbm(vec3 p, int octaves) {
-    float value = 0.0;
-    float amplitude = 0.5;
-    float frequency = 1.0;
-    
-    for (int i = 0; i < octaves; i++) {
-        value += amplitude * noise(p * frequency);
-        amplitude *= 0.5;
-        frequency *= 2.0;
-    }
-    return value;
-}
-
-// Calculate spiral density pattern
-float spiralDensity(vec2 pos, float r) {
-    float angle = atan(pos.y, pos.x);
-    float spiral_angle = u_disk_spiral_arms * (angle - u_disk_spiral_tightness * log(r / u_disk_inner_radius));
-    return 0.5 + 0.5 * cos(spiral_angle);
-}
 /////////////////
 // Geodesic Integration Functions
 /////////////////
@@ -265,7 +149,7 @@ mat4 tetrad(vec4 x, vec4 time, vec4 aim, vec4 vert) {
 // Sample the spherical skybox using ray direction
 vec3 sample_skybox(vec3 direction) {
     // Debug: Return pure red to verify function is being called
-    //return vec3(1.0, 0.0, 0.0);//this is actually happening, or something is overiding it.
+    //return vec3(1.0, 0.0, 0.0);
     return texture(u_skybox, normalize(direction)).rgb;
 }
 
@@ -276,83 +160,6 @@ vec3 toSRGB(vec3 linear) {
 vec3 toneMap(vec3 colour) {
      // ACES approximation by Krzysztof Narkowicz
     return clamp((colour * (2.51 * colour + 0.03)) / (colour * (2.43 * colour + 0.59) + 0.14), 0.0, 1.0);
-}
-
-// Enhanced disk density function with turbulence and spiral structure
-float getDiskDensity(vec4 pos) {
-    float r = rFromCoords(pos);
-    float r_norm = r / u_disk_inner_radius;
-    
-    // Base density calculation (your existing code)
-    float core_density = 1.0 / pow(r_norm, 0.8);
-    float mid_density = 0.4 / pow(r_norm, 0.5);
-    float outer_density = 0.15 / pow(r_norm, 0.2);
-    
-    float base_density = core_density + mid_density + outer_density;
-    
-    // Smooth outer edge fade
-    float edge_fade = 1.0 - smoothstep(0.6, 1.0, (r - u_disk_inner_radius) / (u_disk_outer_radius - u_disk_inner_radius));
-    base_density *= edge_fade;
-    
-    // Vertical density profile
-    float z_scale = u_disk_thickness * (0.3 + 0.7 * sqrt(r_norm));
-    float vertical_density = exp(-0.5 * pow(pos.w / z_scale, 2.0));
-    
-    // Frame dragging enhancement (depends on u_spin)
-    float r2 = r * r;
-    float a2 = a * a;  // Uses your existing a = u_spin * M
-    
-    // Frame dragging factor (stronger with higher u_spin)
-    float frame_drag_factor = 1.0 + 0.2 * a / (r * r * r);
-    frame_drag_factor = clamp(frame_drag_factor, 0.8, 2.5);
-    
-    // Spiral structure modified by frame dragging
-    vec2 disk_pos = pos.yz;
-    
-    // Frame dragging affects spiral tightness (more spin = tighter spirals)
-    float dragged_spiral_tightness = u_disk_spiral_tightness * (1.0 + u_spin);
-    float angle = atan(disk_pos.y, disk_pos.x);
-    float enhanced_spiral_angle = u_disk_spiral_arms * (angle - dragged_spiral_tightness * log(r / u_disk_inner_radius));
-    float enhanced_spiral = 0.5 + 0.5 * cos(enhanced_spiral_angle);
-    
-    // Multi-scale turbulence
-    vec3 turb_pos = vec3(pos.yz * (0.1 + 0.05 * r_norm), u_time * 0.02);
-    float turbulence = fbm(turb_pos, 4);
-    
-    // Combine all effects
-    float structure_modulation = (0.7 + 0.3 * enhanced_spiral) * (0.6 + 0.4 * turbulence * u_disk_turbulence);
-    
-    // Apply frame dragging to final density
-    float final_density = base_density * vertical_density * structure_modulation * frame_drag_factor * u_disk_opacity;
-    
-    return final_density;
-}
-
-// Enhanced temperature calculation with turbulence
-float getDiskTemperature(vec4 pos, float density, vec4 observer_pos) {
-    float r = rFromCoords(pos);
-    float r_norm = r / u_disk_inner_radius;
-    
-    // Base temperature profile
-    float base_temp = u_disk_temperature_factor * pow(r_norm, -0.8);
-    
-    // Calculate Doppler shift
-    float doppler_shift = calculateDopplerShift(pos, vec4(0.0), observer_pos);
-    
-    // Apply Doppler shift to temperature (frequency shift affects blackbody temperature)
-    float doppler_temp = base_temp * doppler_shift;
-    
-    // Temperature fluctuations from turbulence
-    vec3 temp_pos = vec3(pos.yz * 0.05, u_time * 0.01);
-    float temp_turbulence = fbm(temp_pos, 3);
-    
-    // Hot spots correlate with density
-    float temp_enhancement = 1.0 + 0.5 * density * temp_turbulence;
-    
-    // Final temperature with Doppler effect
-    float final_temp = doppler_temp * temp_enhancement;
-    
-    return clamp(final_temp, 200.0, 1e7);
 }
 
 // Accurate blackbody colour from temperature in Kelvin (1000K–40000K)
@@ -385,80 +192,257 @@ vec3 blackbodycolour(float temperature) {
     return clamp(rgb, 0.0, 1.0);
 }
 
-// Volumetric ray marching through the disk
-vec3 volumetricDiskRender(vec4 start_pos, vec4 ray_dir, vec4 momentum, float max_distance, vec4 observer_pos) {
-   // Debug: Return fixed colour to test if function is being called
-    //return vec3(0.5, 0.2, 0.8); // Uncomment this line for basic test
+//////////////////////////////////////////////////////////////
+// SPH PARTICLE FUNCTIONS
+//////////////////////////////////////////////////////////////
+
+// Sample particle data from textures
+vec4 getParticlePosition(int index) {
+    if (index < 0 || index >= u_particle_count) return vec4(0.0);
+    ivec2 coord = ivec2(index % u_particle_texture_size, index / u_particle_texture_size);
+    return texelFetch(u_particle_positions, coord, 0);
+}
+
+vec4 getParticleVelocity(int index) {
+    if (index < 0 || index >= u_particle_count) return vec4(0.0);
+    ivec2 coord = ivec2(index % u_particle_texture_size, index / u_particle_texture_size);
+    return texelFetch(u_particle_velocities, coord, 0);
+}
+
+vec4 getParticleProperties(int index) {
+    if (index < 0 || index >= u_particle_count) return vec4(0.0);
+    ivec2 coord = ivec2(index % u_particle_texture_size, index / u_particle_texture_size);
+    return texelFetch(u_particle_properties, coord, 0);
+}
+
+vec4 getParticleThermal(int index) {
+    if (index < 0 || index >= u_particle_count) return vec4(0.0);
+    ivec2 coord = ivec2(index % u_particle_texture_size, index / u_particle_texture_size);
+    return texelFetch(u_particle_thermal, coord, 0);
+}
+
+// SPH Wendland C2 kernel (matches your header)
+float wendlandC2Kernel(float r, float h) {
+    if (r >= h) return 0.0;
+    float q = r / h;
+    float factor = 1.0 - q;
+    return (7.0 / (4.0 * PI * h * h * h)) * factor * factor * factor * factor * (1.0 + 4.0 * q);
+}
+
+// Calculate Doppler shift for particle-based rendering
+float calculateParticleDopplerShift(vec3 particle_pos, vec3 particle_velocity, vec4 observer_pos) {
+    vec3 observer_3d = observer_pos.yzw;
+    vec3 line_of_sight = normalize(observer_3d - particle_pos);
+    float v_los = dot(particle_velocity, line_of_sight);
     
+    // Relativistic Doppler formula
+    float beta = v_los; // v/c in natural units
+    float doppler_factor;
+    
+    if (abs(beta) < 0.1) {
+        doppler_factor = 1.0 + beta;
+    } else {
+        doppler_factor = sqrt((1.0 - beta) / (1.0 + beta));
+    }
+    
+    return mix(1.0, doppler_factor, u_doppler_factor);
+}
+
+// Calculate particle contribution at a given point
+vec3 calculateParticleContribution(vec3 point, int particle_index, vec4 observer_pos) {
+     // Debug: Return pure red to verify function is being called
+    //return vec3(0.0, 0.0, 1.0);
+    
+    vec4 pos_mass = getParticlePosition(particle_index);
+    vec3 particle_pos = pos_mass.xyz;
+    float mass = pos_mass.w;
+    
+    vec4 vel_density = getParticleVelocity(particle_index);
+    vec3 velocity = vel_density.xyz;
+    float density = vel_density.w;
+    
+    vec4 properties = getParticleProperties(particle_index);
+    float temperature = properties.x;
+    float pressure = properties.y;
+    float smoothing_length = properties.z;
+    uint flags = uint(properties.w);
+    
+    vec4 thermal = getParticleThermal(particle_index);
+    float thermal_energy = thermal.x;
+    
+    // Check if point is within particle's influence
+    float dist = length(point - particle_pos);
+    if (dist >= smoothing_length) {
+        return vec3(0.0);
+    }
+    
+    // Calculate kernel weight
+    float kernel_weight = wendlandC2Kernel(dist, smoothing_length);
+    if (kernel_weight <= 0.0) {
+        return vec3(0.0);
+    }
+    
+    // Check particle flags for rendering
+    bool is_active = (flags & 1u) != 0u;
+    bool is_hot = (flags & 16u) != 0u;
+    bool is_accreting = (flags & 32u) != 0u;
+    
+    if (!is_active) {
+        return vec3(0.0);
+    }
+    
+    // Enhanced temperature based on particle state
+    float effective_temp = temperature;
+    if (is_hot) {
+        effective_temp *= 1.5; // Hot particles are hotter
+    }
+    if (is_accreting) {
+        effective_temp *= 1.2; // Accreting particles have additional heating
+    }
+    
+    // Add thermal energy contribution
+    effective_temp += thermal_energy * 100.0; // Scale thermal energy to temperature
+    
+    // Calculate Doppler shift
+    float doppler_factor = calculateParticleDopplerShift(particle_pos, velocity, observer_pos);
+    effective_temp *= doppler_factor;
+    
+    // Blackbody emission
+    vec3 emission = blackbodycolour(effective_temp);
+    
+    // Intensity based on density and kernel weight
+    float intensity = density * kernel_weight * mass;
+    
+    // Apply Doppler beaming
+    float beaming_factor = pow(abs(doppler_factor), 2.0);
+    beaming_factor = clamp(beaming_factor, 0.1, 8.0);
+    
+    intensity *= beaming_factor;
+    
+    // Temperature-based brightness scaling
+    float temp_ratio = effective_temp / 5000.0;
+    float brightness;
+    if (temp_ratio > 2.0) {
+        brightness = 4.0 + 2.0 * log(temp_ratio / 2.0);
+    } else {
+        brightness = pow(temp_ratio, 1.8);
+    }
+    brightness = clamp(brightness, 0.1, 12.0);
+    
+    return emission * intensity * brightness * u_disk_brightness * u_disk_opacity;
+}
+
+// Optimised particle-based volumetric rendering
+vec3 particleVolumetricRender(vec4 start_pos, vec4 ray_dir, float max_distance, vec4 observer_pos, mat4 frame) {
+      // Debug: Return pure red to verify function is being called
+    //return vec3(0.0, 1.0, 0.0);
     vec3 accumulated_colour = vec3(0.0);
     float accumulated_opacity = 0.0;
     
-    int samples = max(24, min(u_disk_volume_samples, 128));
+    int samples = 2;
     float step_size = max_distance / float(samples);
-    
     vec4 current_pos = start_pos;
 
-    for (int i = 0; i < samples; i++) {
-        if (accumulated_opacity > 0.98) break;
+    // Spatial culling parameters for debug
+    float max_check_radius = 3.0;  // Only check particles within this distance
+    int max_particles_per_sample = 10;  // Safety limit to prevent GPU hang
+    
+    for (int i = 0; i < samples; ++i) {
+        vec3 sample_point = current_pos.yzw;
 
-        float r = rFromCoords(current_pos);
-        if (r >= u_disk_inner_radius && r <= u_disk_outer_radius &&
-            abs(current_pos.w) < u_disk_thickness * 2.0) {
+        int particles_checked = 0;
 
-            // Enhanced density with frame dragging
-            float density = getDiskDensity(current_pos);
-            
-            if (density < 0.0005) {
-                current_pos += ray_dir * step_size;
-                continue;
+        // Check all particles — no kernel, just sphere check
+        for (int p = 0; p < u_particle_count; ++p) {
+            // Safety brake to prevent GPU hangs
+            if (particles_checked >= max_particles_per_sample) break;
+
+            vec4 pos_mass = getParticlePosition(p);
+            vec3 particle_pos = pos_mass.xyz;
+
+            float dist = length(sample_point - particle_pos);
+            if (dist > max_check_radius) { // Set to expected smoothing scale
+                continue; // Skip particles too far away
             }
 
-            // Enhanced temperature with Doppler shifting
-            float temp = getDiskTemperature(current_pos, density, observer_pos);
-
-            // Emission color (linear RGB)
-            vec3 emission = blackbodycolour(temp);
-
-            // Get Doppler factor for beaming
-            float doppler_factor = calculateDopplerShift(current_pos, vec4(0.0), observer_pos);
-            
-            // Apply Doppler beaming to intensity (affects brightness)
-            float beaming_enhancement = pow(abs(doppler_factor), 2.0); // Relativistic beaming ∝ δ²
-            beaming_enhancement = clamp(beaming_enhancement, 0.1, 8.0);
-            
-            // Intensity scaling with temperature
-            float temp_ratio = temp / 5000.0;
-            float brightness;
-
-            if (temp_ratio > 2.0) {
-                brightness = 4.0 + 2.0 * log(temp_ratio / 2.0);
-            } else {
-                brightness = pow(temp_ratio, 1.8);
+            if(dist < 0.5){
+                return vec3(1.0, 0.0, 0.0); // Debug: Return red if too close
             }
-
-            brightness = clamp(brightness, 0.1, 12.0);
-            emission *= brightness * beaming_enhancement;
-
-            // Opacity calculation
-            float opacity_per_step = density * step_size * 0.8;
-            opacity_per_step = min(opacity_per_step, 0.3);
-
-            float extinction = exp(-accumulated_opacity * 1.5);
-
-            accumulated_colour += emission * opacity_per_step * extinction * u_disk_brightness;
-            accumulated_opacity += opacity_per_step * (1.0 - accumulated_opacity * 0.8);
         }
 
         current_pos += ray_dir * step_size;
     }
 
-    return accumulated_colour;
+    return vec3(0.0); // No hit = black
+    
+    
+    // // Pre-calculate maximum particle influence radius for culling
+    // float max_particle_radius = 2.0; // Adjust based on your smoothing lengths
+    
+    // for (int i = 0; i < samples; i++) {
+    //     if (accumulated_opacity > 0.98) break;
+        
+    //     vec3 sample_point = current_pos.yzw;
+    //     vec3 step_contribution = vec3(0.0);
+    //     float step_opacity = 0.0;
+        
+    //     // OPTIMISATION 1: Limit particles checked per sample
+    //     int particles_to_check = min(u_particle_count, 8);
+        
+    //     // OPTIMISATION 2: Early distance culling
+    //     int particles_processed = 0;
+    //     for (int p = 0; p < u_particle_count && particles_processed < particles_to_check; p++) {
+    //         vec4 pos_mass = getParticlePosition(p);
+    //         vec3 particle_pos = pos_mass.xyz;
+            
+    //         // Quick distance check - skip if too far
+    //         float dist = length(sample_point - particle_pos);
+    //         if (dist > 5.0) continue;
+
+    //         if (dist > max_particle_radius) {
+    //             continue;
+    //         }
+            
+    //         particles_processed++;
+            
+    //         vec4 properties = getParticleProperties(p);
+    //         float smoothing_length = properties.z;
+            
+    //         // More precise distance check
+    //         if (dist < smoothing_length) {
+    //             vec3 particle_contrib = calculateParticleContribution(sample_point, p, observer_pos);
+    //             step_contribution += particle_contrib;
+                
+    //             // Add to opacity based on particle density and kernel weight
+    //             vec4 vel_density = getParticleVelocity(p);
+    //             float density = vel_density.w;
+    //             float kernel_weight = wendlandC2Kernel(dist, smoothing_length);
+    //             step_opacity += density * kernel_weight * step_size * 0.1;
+    //         }
+    //     }
+        
+    //     // Limit opacity per step
+    //     step_opacity = min(step_opacity, 0.3);
+        
+    //     // Apply extinction
+    //     float extinction = exp(-accumulated_opacity * 1.5);
+        
+    //     accumulated_colour += step_contribution * extinction;
+    //     accumulated_opacity += step_opacity * (1.0 - accumulated_opacity * 0.8);
+        
+    //     current_pos += ray_dir * step_size;
+    // }
+    
+    // return accumulated_colour;
+    
 }
 
-/*Main raytracing function that follows a light ray through curved spacetime 
-and returns the colour from the skybox or black for captured rays*/
-vec3 trace_kerr_ray(vec3 dir, vec4 camPos, mat4 axes) {
-     vec4 pos = camPos;
+// Main ray tracing function adapted for particles
+vec3 trace_kerr_ray_particles(vec3 dir, vec4 camPos, mat4 axes) {
+    // Debug: Return fixed colour to test if function is being called
+    //return vec3(0.5, 0.2, 0.8); // Uncomment this line for basic test
+    
+    vec4 pos = camPos;
     vec4 dir4D = -axes[0] + vec4(0.0, dir.x, dir.y, dir.z);
     vec4 p = metric(pos) * dir4D;
 
@@ -467,31 +451,28 @@ vec3 trace_kerr_ray(vec3 dir, vec4 camPos, mat4 axes) {
 
     bool in_disk_region = false;
     vec4 disk_entry_pos;
-    vec4 disk_entry_momentum;
 
     for (int i = 0; i < u_max_steps; i++) {
-        vec4 last_pos = pos;
         transportStep(pos, p);
 
         float r = rFromCoords(pos);
         bool currently_in_disk = (r >= u_disk_inner_radius &&
                                   r <= u_disk_outer_radius &&
-                                  abs(pos.w) < u_disk_thickness);
+                                  abs(pos.z) < u_disk_thickness);
 
         if (currently_in_disk && !in_disk_region) {
             in_disk_region = true;
             disk_entry_pos = pos;
-            disk_entry_momentum = p;
         } else if (!currently_in_disk && in_disk_region) {
             float disk_distance = length(pos.yzw - disk_entry_pos.yzw);
             if (disk_distance > 0.001 && disk_distance < 1000.0) {
-                // Use enhanced volumetric rendering with Doppler effects
-                disk_contribution += volumetricDiskRender(
+                // Use particle-based volumetric rendering
+                disk_contribution += particleVolumetricRender(
                     disk_entry_pos,
                     normalize(pos - disk_entry_pos),
-                    disk_entry_momentum,
                     disk_distance,
-                    camPos  // Pass observer position for Doppler calculation
+                    camPos,
+                    axes  // Observer position THIS IS PROB FUCKED AGAIN CAM IS 90 OFF
                 );
             }
             in_disk_region = false;
@@ -509,12 +490,12 @@ vec3 trace_kerr_ray(vec3 dir, vec4 camPos, mat4 axes) {
     if (in_disk_region) {
         float disk_distance = length(final_pos.yzw - disk_entry_pos.yzw);
         if (disk_distance > 0.001 && disk_distance < 1000.0) {
-            disk_contribution += volumetricDiskRender(
+            disk_contribution += particleVolumetricRender(
                 disk_entry_pos,
                 normalize(final_pos - disk_entry_pos),
-                disk_entry_momentum,
                 disk_distance,
-                camPos  // Pass observer position for Doppler calculation
+                camPos,
+                axes
             );
         }
     }
@@ -526,7 +507,7 @@ vec3 trace_kerr_ray(vec3 dir, vec4 camPos, mat4 axes) {
 
     if (!captured) {
         vec4 out_dir = inverse(metric(final_pos)) * p;
-        vec3 cube_dir = normalize(vec3(-out_dir.y, out_dir.w, -out_dir.z));
+        vec3 cube_dir = normalize(vec3(out_dir.y, out_dir.z, out_dir.w));
         background_colour = sample_skybox(cube_dir);
     }
 
@@ -549,8 +530,6 @@ void main() {
     );
     
     // Observer 4-position and initial time direction
-    // Note: u_cam_pos is in the format (t, x, y, z) where t is time
-    // and (x, y, z) are the spatial coordinates.
     vec4 camPos = vec4(0.0, u_cam_pos.x, u_cam_pos.y, u_cam_pos.z);
     
     // Map 3D camera vectors to 4D space
@@ -560,16 +539,10 @@ void main() {
     
     mat4 camFrame = tetrad(camPos, timeDir, aim, vert);
 
-    //This area is controlling the colour and the background saturation, In reality the brightness of the disk would overwhelm 
-    //the background I'm not happy with the saturated HDR look.
-    vec3 colour = trace_kerr_ray(ray_dir, camPos, camFrame);
+    vec3 colour = trace_kerr_ray_particles(ray_dir, camPos, camFrame);
+
     colour *= 1.0 / 5.0;
-    vec3 mapped = toneMap(colour); // <-- Try tuning this number (smaller = darker)
+    vec3 mapped = toneMap(colour);
     vec3 final = toSRGB(mapped);
-    
-    // Colour debugging
-    // float temp = mix(1000.0, 40000.0, TexCoord.x); // left to right: 1000K to 40000K
-    // vec3 final = blackbodycolour(temp);
-    // Temporary test - remove after debugging
     FragColour = vec4(final, 1.0);
 }

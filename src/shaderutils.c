@@ -1,6 +1,7 @@
 #include <SDL_image.h>
 #include <GL/glew.h>
 #include <SDL_opengl.h>
+#include <omp.h>
 #include "blackholemath.h"
 #include "shaderutils.h"
 
@@ -47,20 +48,6 @@ GLuint compile_shader(const char* source, GLenum shader_type) {
     }
     
     return shader;
-}
-
-GLuint create_simple_disk_texture() {
-    unsigned char orange_data[] = {255, 128, 32}; // Orange color
-    
-    GLuint texture_id;
-    glGenTextures(1, &texture_id);
-    glBindTexture(GL_TEXTURE_2D, texture_id);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, orange_data);
-    
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    
-    return texture_id;
 }
 
 /*Loads, compiles, and links a vertex and fragment shader into a GLSL program.
@@ -154,47 +141,33 @@ Calculates view vectors and passes simulation settings to the shader.*/
 void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int height) {
     glUseProgram(program);
     
+    // Check if program is valid
+    GLint is_program;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &is_program);
+    if (is_program != (GLint)program) {
+        fprintf(stderr, "Warning: Shader program not properly bound\n");
+        return;
+    }
+
     // Kerr black hole parameters
     glUniform1f(glGetUniformLocation(program, "u_mass"), (float)params.mass);
     glUniform1f(glGetUniformLocation(program, "u_spin"), (float)params.spin);
-    glUniform1f(glGetUniformLocation(program, "u_spin_dimensional"), (float)params.spin_dimensional);
-    
-    // Event horizons
-    glUniform1f(glGetUniformLocation(program, "u_schwarzschild_radius"), (float)params.schwarzschild_radius);
-    glUniform1f(glGetUniformLocation(program, "u_kerr_radius_outer"), (float)params.kerr_radius_outer);
-    glUniform1f(glGetUniformLocation(program, "u_kerr_radius_inner"), (float)params.kerr_radius_inner);
-    
-    // Ergosphere
-    glUniform1f(glGetUniformLocation(program, "u_ergosphere_eq"), (float)params.ergosphere_radius_eq);
-    glUniform1f(glGetUniformLocation(program, "u_ergosphere_pole"), (float)params.ergosphere_radius_pole);
-    
-    // Critical orbits
-    glUniform1f(glGetUniformLocation(program, "u_isco_prograde"), (float)params.isco_radius_prograde);
-    glUniform1f(glGetUniformLocation(program, "u_isco_retrograde"), (float)params.isco_radius_retrograde);
-    glUniform1f(glGetUniformLocation(program, "u_photon_sphere_prograde"), (float)params.photon_sphere_prograde);
-    glUniform1f(glGetUniformLocation(program, "u_photon_sphere_retrograde"), (float)params.photon_sphere_retrograde);
     
     // Observer parameters
     glUniform1f(glGetUniformLocation(program, "u_observer_distance"), (float)params.observer_distance);
-    
+
     // Integration parameters
     glUniform1f(glGetUniformLocation(program, "u_eps"), (float)params.eps);
     glUniform1f(glGetUniformLocation(program, "u_dtau"), (float)params.dtau);
     glUniform1i(glGetUniformLocation(program, "u_max_steps"), params.max_steps);
-    
+
     // Accretion Disk
     glUniform1f(glGetUniformLocation(program, "u_disk_inner_radius"), params.disk.inner_radius);
     glUniform1f(glGetUniformLocation(program, "u_disk_outer_radius"), params.disk.outer_radius);
     glUniform1f(glGetUniformLocation(program, "u_disk_opacity"), params.disk.opacity);
-    glUniform1f(glGetUniformLocation(program, "u_disk_temperature_factor"), params.disk.temperature_factor);
+    //glUniform1f(glGetUniformLocation(program, "u_disk_temperature_factor"), params.disk.temperature_factor);
     glUniform1f(glGetUniformLocation(program, "u_disk_thickness"), params.disk.thickness);
-    
-    // Disk addtions for volume rendering
-    glUniform1f(glGetUniformLocation(program, "u_disk_turbulence"), params.disk.turbulence_strength);
-    glUniform1f(glGetUniformLocation(program, "u_disk_spiral_arms"), params.disk.spiral_arms);
-    glUniform1f(glGetUniformLocation(program, "u_disk_spiral_tightness"), params.disk.spiral_tightness);
     glUniform1f(glGetUniformLocation(program, "u_disk_brightness"), params.disk.brightness);
-    glUniform1f(glGetUniformLocation(program, "u_disk_volume_samples"), params.disk.volume_samples);
 
     // Screen parameters
     glUniform2f(glGetUniformLocation(program, "u_resolution"), (float)width, (float)height);
@@ -202,7 +175,7 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     // Camera setup
     double aspect_ratio = (double)width / (double)height;
     double fov = 60.0 * M_PI / 180.0;
-    double theta = 280 * M_PI / 180.0; //the disk seems to be edge on at 270 so consider that 0 for mathing it above or below the disk
+    double theta = -20 * M_PI / 180.0; //the disk seems to be edge on at 270 so consider that 0 for mathing it above or below the disk
     double r = params.observer_distance;
     
    // Camera position in spherical coordinates -> Cartesian
@@ -214,7 +187,7 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     
     // Camera vectors (simplified - forward points toward origin)
     float cam_target[3] = {0.0f, 0.0f, 0.0f};
-    float cam_up[3] = {0.0f, 0.0f, 1.0f}; //camera rotation
+    float cam_up[3] = {0.0f, 1.0f, 0.0f}; //camera rotation
     
     // Calculate forward vector (from camera to target)
     float forward[3] = {
@@ -257,15 +230,193 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     glUniform1f(glGetUniformLocation(program, "u_fov"), (float)fov);
     glUniform1f(glGetUniformLocation(program, "u_aspect"), (float)aspect_ratio);
 
-    printf("Camera pos: (%.2f, %.2f, %.2f)\n", cam_pos[0], cam_pos[1], cam_pos[2]);
-    printf("Forward: (%.2f, %.2f, %.2f)\n", forward[0], forward[1], forward[2]);
-    printf("Right: (%.2f, %.2f, %.2f)\n", right[0], right[1], right[2]);
-    printf("Up: (%.2f, %.2f, %.2f)\n", up[0], up[1], up[2]);
-    printf("theta: %.2f degrees\n", theta * 180.0 / M_PI);
-    printf("Camera pos: (%.2f, %.2f, %.2f)\n", cam_pos[0], cam_pos[1], cam_pos[2]);
-    printf("Camera distance from origin: %.2f\n", sqrt(cam_pos[0]*cam_pos[0] + cam_pos[1]*cam_pos[1] + cam_pos[2]*cam_pos[2]));
+    // printf("Camera pos: (%.2f, %.2f, %.2f)\n", cam_pos[0], cam_pos[1], cam_pos[2]);
+    // printf("Forward: (%.2f, %.2f, %.2f)\n", forward[0], forward[1], forward[2]);
+    // printf("Right: (%.2f, %.2f, %.2f)\n", right[0], right[1], right[2]);
+    // printf("Up: (%.2f, %.2f, %.2f)\n", up[0], up[1], up[2]);
+    // printf("theta: %.2f degrees\n", theta * 180.0 / M_PI);
+    // printf("Camera pos: (%.2f, %.2f, %.2f)\n", cam_pos[0], cam_pos[1], cam_pos[2]);
+    // printf("Camera distance from origin: %.2f\n", sqrt(cam_pos[0]*cam_pos[0] + cam_pos[1]*cam_pos[1] + cam_pos[2]*cam_pos[2]));
 }
 
+// Create GPU textures for SPH particle data **Ok but where the fuck is the data? There seems to be no connection betweent he data simulated an
+//and whatever this does.
+SPHGPUData* create_sph_gpu_data(int max_particles) {
+    SPHGPUData* gpu_data = malloc(sizeof(SPHGPUData));
+    
+    // Calculate texture size (next power of 2 >= sqrt(max_particles))
+    gpu_data->texture_size = 1;
+    while (gpu_data->texture_size * gpu_data->texture_size < max_particles) {
+        gpu_data->texture_size *= 2;
+    }
+
+    printf("Creating SPH GPU data with texture size: %d x %d\n", gpu_data->texture_size, gpu_data->texture_size);
+    
+    // Create textures
+    glGenTextures(1, &gpu_data->positions_texture);
+    glGenTextures(1, &gpu_data->velocities_texture);
+    glGenTextures(1, &gpu_data->properties_texture);
+    glGenTextures(1, &gpu_data->thermal_texture);
+    
+    // Setup position texture
+    glBindTexture(GL_TEXTURE_2D, gpu_data->positions_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, gpu_data->texture_size, gpu_data->texture_size, 
+                 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    
+    // Setup velocity texture
+    glBindTexture(GL_TEXTURE_2D, gpu_data->velocities_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, gpu_data->texture_size, gpu_data->texture_size,
+                 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    
+    // Setup properties texture
+    glBindTexture(GL_TEXTURE_2D, gpu_data->properties_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, gpu_data->texture_size, gpu_data->texture_size,
+                 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    
+    // Setup thermal texture
+    glBindTexture(GL_TEXTURE_2D, gpu_data->thermal_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, gpu_data->texture_size, gpu_data->texture_size,
+                 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    
+    glBindTexture(GL_TEXTURE_2D, 0);
+    
+    return gpu_data;
+}
+
+// Upload SPH particle data to GPU textures
+void upload_sph_particles_to_gpu(SPHSystem* sph_system, SPHGPUData* gpu_data) {
+    int tex_size = gpu_data->texture_size;
+    int total_texels = tex_size * tex_size;
+    
+    // Allocate temporary arrays for texture data
+    float* positions_data = calloc(total_texels * 4, sizeof(float));  // RGBA
+    float* velocities_data = calloc(total_texels * 4, sizeof(float)); // RGBA
+    float* properties_data = calloc(total_texels * 4, sizeof(float)); // RGBA
+    float* thermal_data = calloc(total_texels * 4, sizeof(float));    // RGBA
+    
+    // Pack particle data into texture arrays
+    for (int i = 0; i < sph_system->particle_count && i < total_texels; i++) {
+        SPHParticle* p = &sph_system->particles[i];
+        int idx = i * 4; // 4 components per texel
+        
+        // Position texture: xyz = position, w = mass
+        positions_data[idx + 0] = (float)p->position.x;
+        positions_data[idx + 1] = (float)p->position.y;
+        positions_data[idx + 2] = (float)p->position.z;
+        positions_data[idx + 3] = (float)p->mass;
+        
+        // Velocity texture: xyz = velocity, w = density
+        velocities_data[idx + 0] = (float)p->velocity.x;
+        velocities_data[idx + 1] = (float)p->velocity.y;
+        velocities_data[idx + 2] = (float)p->velocity.z;
+        velocities_data[idx + 3] = (float)p->density;
+        
+        // Properties texture: x = temperature, y = pressure, z = smoothing_length, w = flags
+        properties_data[idx + 0] = (float)p->temperature;
+        properties_data[idx + 1] = (float)p->pressure;
+        properties_data[idx + 2] = (float)p->smoothing_length;
+        properties_data[idx + 3] = (float)p->flags;
+        
+        // Thermal texture: x = thermal_energy, y = radiative_cooling, z = heating_rate, w = unused
+        thermal_data[idx + 0] = (float)p->thermal_energy;
+        thermal_data[idx + 1] = (float)p->radiative_cooling;
+        thermal_data[idx + 2] = (float)p->heating_rate;
+        thermal_data[idx + 3] = 0.0f; // unused
+    }
+    
+    printf("Uploading %d particles to %dx%d texture (%d total texels)\n", 
+       sph_system->particle_count, tex_size, tex_size, total_texels);
+
+    if (sph_system->particle_count > total_texels) {
+        fprintf(stderr, "WARNING: Too many particles (%d) for texture size (%d)\n", 
+                sph_system->particle_count, total_texels);
+    }
+
+    // Upload to GPU
+    glBindTexture(GL_TEXTURE_2D, gpu_data->positions_texture);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tex_size, tex_size, GL_RGBA, GL_FLOAT, positions_data);
+    
+    glBindTexture(GL_TEXTURE_2D, gpu_data->velocities_texture);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tex_size, tex_size, GL_RGBA, GL_FLOAT, velocities_data);
+    
+    glBindTexture(GL_TEXTURE_2D, gpu_data->properties_texture);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tex_size, tex_size, GL_RGBA, GL_FLOAT, properties_data);
+    
+    glBindTexture(GL_TEXTURE_2D, gpu_data->thermal_texture);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tex_size, tex_size, GL_RGBA, GL_FLOAT, thermal_data);
+    
+    glBindTexture(GL_TEXTURE_2D, 0);
+    
+    // Clean up temporary arrays
+    free(positions_data);
+    free(velocities_data);
+    free(properties_data);
+    free(thermal_data);
+}
+
+// Bind SPH textures to shader uniforms
+void bind_sph_textures_to_shader(GLuint shader_program, SPHGPUData* gpu_data, int particle_count) {
+    glUseProgram(shader_program);
+    
+    // Bind position texture to texture unit 1
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, gpu_data->positions_texture);
+    glUniform1i(glGetUniformLocation(shader_program, "u_particle_positions"), 1);
+    
+    // Bind velocity texture to texture unit 2
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, gpu_data->velocities_texture);
+    glUniform1i(glGetUniformLocation(shader_program, "u_particle_velocities"), 2);
+    
+    // Bind properties texture to texture unit 3
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, gpu_data->properties_texture);
+    glUniform1i(glGetUniformLocation(shader_program, "u_particle_properties"), 3);
+    
+    // Bind thermal texture to texture unit 4
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_2D, gpu_data->thermal_texture);
+    glUniform1i(glGetUniformLocation(shader_program, "u_particle_thermal"), 4);
+    
+    // Send particle count and texture size
+    glUniform1i(glGetUniformLocation(shader_program, "u_particle_count"), particle_count);
+    glUniform1i(glGetUniformLocation(shader_program, "u_particle_texture_size"), gpu_data->texture_size);
+    
+    // Reset to texture unit 0
+    glActiveTexture(GL_TEXTURE0);
+
+    GLint loc = glGetUniformLocation(shader_program, "u_particle_positions");
+    if (loc == -1) {
+        fprintf(stderr, "Warning: uniform 'u_particle_positions' not found\n");
+    }
+}
+
+// Cleanup SPH GPU data
+void cleanup_sph_gpu_data(SPHGPUData* gpu_data) {
+    if (gpu_data) {
+        glDeleteTextures(1, &gpu_data->positions_texture);
+        glDeleteTextures(1, &gpu_data->velocities_texture);
+        glDeleteTextures(1, &gpu_data->properties_texture);
+        glDeleteTextures(1, &gpu_data->thermal_texture);
+        free(gpu_data);
+    }
+}
 /*Reads the framebuffer into memory, flips it vertically, and saves it as a PNG using SDL.
 Handles memory allocation, surface manipulation, and error logging.*/
 void save_framebuffer_to_png(int width, int height, const char* filename) {
