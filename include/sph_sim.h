@@ -82,13 +82,6 @@ typedef struct {
     double phi_coordinate;
 } SPHParticle;
 
-// Renderer-side packed particle for VBO upload
-// typedef struct {
-//     float x, y, z;      // World position
-//     float size;         // Point size or quad scale
-//     float r, g, b, a;   // Color
-// } RenderParticle;
-
 // Spatial hash cell
 typedef struct {
     uint32_t particle_indices[32];
@@ -152,8 +145,7 @@ void sph_set_particle_properties(SPHSystem* system, int index, double density,
                                  double temperature, uint32_t flags);
 
 // Initialisation
-void sph_initialise_accretion_disk(SPHSystem* system, double inner_radius,
-                                  double outer_radius, int num_particles);
+void sph_initialise_accretion_disk(SPHSystem* system, BlackHoleParams* black_hole, int num_particles);
 void sph_initialise_keplerian_velocities(SPHSystem* system);
 void sph_initialise_thermal_equilibrium(SPHSystem* system);
 

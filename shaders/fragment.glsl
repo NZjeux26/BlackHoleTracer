@@ -339,7 +339,7 @@ vec3 particleVolumetricRender(vec4 start_pos, vec4 ray_dir, float max_distance, 
     vec3 accumulated_colour = vec3(0.0);
     float accumulated_opacity = 0.0;
     
-    int samples = 2;
+    int samples = 8; // Much better performance now!
     float step_size = max_distance / float(samples);
     vec4 current_pos = start_pos;
 
@@ -349,27 +349,27 @@ vec3 particleVolumetricRender(vec4 start_pos, vec4 ray_dir, float max_distance, 
     
     for (int i = 0; i < samples; ++i) {
         vec3 sample_point = current_pos.yzw;
-
+        
         int particles_checked = 0;
-
+        
         // Check all particles — no kernel, just sphere check
         for (int p = 0; p < u_particle_count; ++p) {
             // Safety brake to prevent GPU hangs
             if (particles_checked >= max_particles_per_sample) break;
-
+            
             vec4 pos_mass = getParticlePosition(p);
             vec3 particle_pos = pos_mass.xyz;
-
+            
             float dist = length(sample_point - particle_pos);
             if (dist > max_check_radius) { // Set to expected smoothing scale
                 continue; // Skip particles too far away
             }
-
+            
             if(dist < 0.5){
                 return vec3(1.0, 0.0, 0.0); // Debug: Return red if too close
             }
         }
-
+        
         current_pos += ray_dir * step_size;
     }
 

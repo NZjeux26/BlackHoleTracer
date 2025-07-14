@@ -114,7 +114,7 @@ int main() {
     BlackHoleParams params = init_BH_params(1.0, 0.2, 30.0); // Mass and distance from black hole
 
     // Initialize SPH system for accretion disk
-    SPHSystem* sph_system = sph_create_system(16348, &params);  // 8192 particles
+    SPHSystem* sph_system = sph_create_system(16348, &params); 
     if (!sph_system) {
         fprintf(stderr, "Failed to create SPH system\n");
         // ... existing cleanup code ...
@@ -123,7 +123,7 @@ int main() {
 
     // Set up accretion disk particles
     printf("Initialising accretion disk particles...\n");
-    sph_initialise_accretion_disk(sph_system, 6.0, 20.0, 16348);  // Inner radius: 6, Outer: 20, 4096 particles
+    sph_initialise_accretion_disk(sph_system, &params, 4096);  // Inner radius: 6, Outer: 20, 4096 particles
     sph_initialise_keplerian_velocities(sph_system);
     sph_initialise_thermal_equilibrium(sph_system);
 
@@ -172,9 +172,11 @@ int main() {
     bool save_image = true;
     bool should_render = true;
     bool particle_render = true;
-    int particle_steps = 1000;
-    float dt = 0.001f;
+    int particle_steps = 100;
+    float dt = 0.01f;
     
+    //amx threads for particle simulation
+    omp_set_num_threads(10);
     // Main loop
     while (running) {
         while (SDL_PollEvent(&event)) {
@@ -191,7 +193,7 @@ int main() {
         if(particle_render){
             printf("Particle Simulation Running!\n");
             
-            #pragma omp parallel for schedule(static)
+            //#pragma omp parallel for schedule(static)
             for(int i = 0; i < particle_steps; i++){
                 sph_update_system(sph_system,dt);
             }

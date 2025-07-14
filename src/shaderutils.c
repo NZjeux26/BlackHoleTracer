@@ -165,7 +165,6 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     glUniform1f(glGetUniformLocation(program, "u_disk_inner_radius"), params.disk.inner_radius);
     glUniform1f(glGetUniformLocation(program, "u_disk_outer_radius"), params.disk.outer_radius);
     glUniform1f(glGetUniformLocation(program, "u_disk_opacity"), params.disk.opacity);
-    //glUniform1f(glGetUniformLocation(program, "u_disk_temperature_factor"), params.disk.temperature_factor);
     glUniform1f(glGetUniformLocation(program, "u_disk_thickness"), params.disk.thickness);
     glUniform1f(glGetUniformLocation(program, "u_disk_brightness"), params.disk.brightness);
 
@@ -257,7 +256,7 @@ SPHGPUData* create_sph_gpu_data(int max_particles) {
     glGenTextures(1, &gpu_data->velocities_texture);
     glGenTextures(1, &gpu_data->properties_texture);
     glGenTextures(1, &gpu_data->thermal_texture);
-    
+
     // Setup position texture
     glBindTexture(GL_TEXTURE_2D, gpu_data->positions_texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, gpu_data->texture_size, gpu_data->texture_size, 
@@ -303,7 +302,7 @@ SPHGPUData* create_sph_gpu_data(int max_particles) {
 void upload_sph_particles_to_gpu(SPHSystem* sph_system, SPHGPUData* gpu_data) {
     int tex_size = gpu_data->texture_size;
     int total_texels = tex_size * tex_size;
-    
+
     // Allocate temporary arrays for texture data
     float* positions_data = calloc(total_texels * 4, sizeof(float));  // RGBA
     float* velocities_data = calloc(total_texels * 4, sizeof(float)); // RGBA
@@ -393,11 +392,11 @@ void bind_sph_textures_to_shader(GLuint shader_program, SPHGPUData* gpu_data, in
     glActiveTexture(GL_TEXTURE4);
     glBindTexture(GL_TEXTURE_2D, gpu_data->thermal_texture);
     glUniform1i(glGetUniformLocation(shader_program, "u_particle_thermal"), 4);
-    
+
     // Send particle count and texture size
     glUniform1i(glGetUniformLocation(shader_program, "u_particle_count"), particle_count);
     glUniform1i(glGetUniformLocation(shader_program, "u_particle_texture_size"), gpu_data->texture_size);
-    
+                
     // Reset to texture unit 0
     glActiveTexture(GL_TEXTURE0);
 
@@ -470,32 +469,4 @@ void save_framebuffer_to_png(int width, int height, const char* filename) {
     }
     
     free(pixels);
-}
-
-SSAAFramebuffer create_ssaa_fbo(int base_width, int base_height, int scale) {
-    SSAAFramebuffer ssaa = {0};
-    ssaa.width = base_width * scale;
-    ssaa.height = base_height * scale;
-
-    glGenFramebuffers(1, &ssaa.fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, ssaa.fbo);
-
-    glGenTextures(1, &ssaa.texture);
-    glBindTexture(GL_TEXTURE_2D, ssaa.texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, ssaa.width, ssaa.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ssaa.texture, 0);
-
-    glGenRenderbuffers(1, &ssaa.rbo);
-    glBindRenderbuffer(GL_RENDERBUFFER, ssaa.rbo);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, ssaa.width, ssaa.height);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, ssaa.rbo);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        fprintf(stderr, "SSAA FBO is not complete!\n");
-    }
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind
-    return ssaa;
 }

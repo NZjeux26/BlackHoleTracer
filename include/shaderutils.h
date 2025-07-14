@@ -38,4 +38,5 @@ void upload_sph_particles_to_gpu(SPHSystem* sph_system, SPHGPUData* gpu_data);
 // Bind SPH textures to shader
 void bind_sph_textures_to_shader(GLuint shader_program, SPHGPUData* gpu_data, int particle_count);
 void cleanup_sph_gpu_data(SPHGPUData* gpu_data);
+void upload_hash_table_to_gpu(SPHSystem* sph_system, SPHGPUData* gpu_data);
 #endif 

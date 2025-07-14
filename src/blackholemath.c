@@ -14,9 +14,6 @@ BlackHoleParams init_BH_params(double mass, double spin, double observer_distanc
     
     // Observer parameters
     params.observer_distance = observer_distance;
-    
-    // Initialize default disk
-    init_default_disk(&params.disk);
 
     // Calculate Kerr-specific quantities
     calculate_kerr_horizons(&params);
@@ -29,11 +26,6 @@ BlackHoleParams init_BH_params(double mass, double spin, double observer_distanc
     params.max_steps = 2000;
     
     return params;
-}
-
-void init_default_disk(AccretionDisk* disk) {
-   
-
 }
 
 void calculate_recommended_disk_params(BlackHoleParams* params) {
@@ -52,12 +44,6 @@ void calculate_recommended_disk_params(BlackHoleParams* params) {
       
     params->disk.opacity = 0.2;
     params->disk.brightness = 10.1;
-
-    // More turbulence for higher spin
-    params->disk.turbulence_strength = 0.2 + 0.3 * fabs(params->spin);
-    
-    // Spiral tightness increases with spin
-    params->disk.spiral_tightness = 0.3 + 0.4 * fabs(params->spin);
     
 }
 // Calculate Kerr horizons and ergosphere
