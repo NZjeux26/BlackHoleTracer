@@ -21,6 +21,12 @@ uniform sampler2D u_particle_thermal;      // RGBA32F texture: x = thermal_energ
 uniform int u_particle_count;              // Total number of active particles
 uniform int u_particle_texture_size;       // Size of particle texture (sqrt of max particles)
 
+//SPH hash table data
+uniform sampler2D u_hash_indices;
+uniform sampler2D u_hash_counts;
+uniform float u_grid_cell_size;
+uniform int u_hash_table_size;
+
 // Accretion disk parameters
 uniform float u_disk_inner_radius;
 uniform float u_disk_outer_radius;
@@ -46,6 +52,8 @@ uniform samplerCube u_skybox;
 float M = u_mass; // Mass of the black hole
 float a = u_spin * M; //Spin parameter spin amount * Mass of the black hole
 
+
+
 //////////////////////////////////////////////////////////////
 // Kerr Metric in Kerr-Schild Coordinates
 //////////////////////////////////////////////////////////////
@@ -59,6 +67,41 @@ mat4 diag(vec4 v) {
 vec4 unit(vec4 v, mat4 g) {
     float norm2 = dot(g * v, v);
     return (norm2 != 0.0) ? v / sqrt(abs(norm2)) : v;
+}
+
+// Hash function matching your CPU implementation
+uint hashPosition(vec3 position, float cell_size) {
+    ivec3 cell = ivec3(floor(position / cell_size));
+    
+    // Use the same hash function as your CPU code
+    uint hash = uint(cell.x * 73856093) ^ uint(cell.y * 19349663) ^ uint(cell.z * 83492791);
+    return hash % uint(u_hash_table_size);
+}
+
+// Convert hash index to texture coordinates
+vec2 hashIndexToTexCoord(uint hash_index) {
+    int hash_tex_size = int(sqrt(float(u_hash_table_size)) + 0.5);
+    int x = int(hash_index) % hash_tex_size;
+    int y = int(hash_index) / hash_tex_size;
+    return vec2(float(x) + 0.5, float(y) + 0.5) / float(hash_tex_size);
+}
+
+// Get particles from hash cell
+void getParticlesFromHashCell(vec3 position, inout int particle_indices[9], inout int particle_count) {
+    uint hash_index = hashPosition(position, u_grid_cell_size);
+    vec2 tex_coord = hashIndexToTexCoord(hash_index);
+    
+    // Get particle count for this hash cell
+    vec4 count_data = texture(u_hash_counts, tex_coord);
+    int cell_count = int(count_data.r);
+    
+    // Get particle indices (up to 3 per texel for now)
+    vec4 indices_data = texture(u_hash_indices, tex_coord);
+    
+    for (int i = 0; i < 3 && i < cell_count && particle_count < 9; i++) {
+        particle_indices[particle_count] = int(indices_data[i]);
+        particle_count++;
+    }
 }
 
 /////////////////////
@@ -336,85 +379,87 @@ vec3 calculateParticleContribution(vec3 point, int particle_index, vec4 observer
 vec3 particleVolumetricRender(vec4 start_pos, vec4 ray_dir, float max_distance, vec4 observer_pos, mat4 frame) {
       // Debug: Return pure red to verify function is being called
     //return vec3(0.0, 1.0, 0.0);
-    vec3 accumulated_colour = vec3(0.0);
-    float accumulated_opacity = 0.0;
-    
-    int samples = 8; // Much better performance now!
+    int samples = 4;
     float step_size = max_distance / float(samples);
     vec4 current_pos = start_pos;
 
-    // Spatial culling parameters for debug
-    float max_check_radius = 3.0;  // Only check particles within this distance
-    int max_particles_per_sample = 10;  // Safety limit to prevent GPU hang
-    
     for (int i = 0; i < samples; ++i) {
         vec3 sample_point = current_pos.yzw;
         
-        int particles_checked = 0;
+        // Get particles from current hash cell and neighbors
+        int particle_indices[9]; // Max particles to check
+        int particle_count = 0;
         
-        // Check all particles — no kernel, just sphere check
-        for (int p = 0; p < u_particle_count; ++p) {
-            // Safety brake to prevent GPU hangs
-            if (particles_checked >= max_particles_per_sample) break;
-            
-            vec4 pos_mass = getParticlePosition(p);
-            vec3 particle_pos = pos_mass.xyz;
-            
-            float dist = length(sample_point - particle_pos);
-            if (dist > max_check_radius) { // Set to expected smoothing scale
-                continue; // Skip particles too far away
-            }
-            
-            if(dist < 0.5){
-                return vec3(1.0, 0.0, 0.0); // Debug: Return red if too close
-            }
+        // Check current cell
+        getParticlesFromHashCell(sample_point, particle_indices, particle_count);
+        
+        // Check neighboring cells (simplified - just check a few key neighbors)
+        vec3 cell_offset = vec3(u_grid_cell_size * 0.5);
+        getParticlesFromHashCell(sample_point + vec3(cell_offset.x, 0, 0), particle_indices, particle_count);
+        getParticlesFromHashCell(sample_point + vec3(0, cell_offset.y, 0), particle_indices, particle_count);
+        getParticlesFromHashCell(sample_point + vec3(0, 0, cell_offset.z), particle_indices, particle_count);
+        
+        // DEBUG: If any particles found, just return red immediately
+        if (particle_count > 0) {
+            return vec3(1.0, 0.0, 0.0);
         }
         
         current_pos += ray_dir * step_size;
     }
 
-    return vec3(0.0); // No hit = black
+    return vec3(0.0, 0.0, 0.0); // Black if no particles found
+    // vec3 accumulated_colour = vec3(0.0);
+    // float accumulated_opacity = 0.0;
     
+    // int samples = 8; // Can increase this now!
+    // float step_size = max_distance / float(samples);
+    // vec4 current_pos = start_pos;
     
-    // // Pre-calculate maximum particle influence radius for culling
-    // float max_particle_radius = 2.0; // Adjust based on your smoothing lengths
-    
-    // for (int i = 0; i < samples; i++) {
-    //     if (accumulated_opacity > 0.98) break;
+    // for (int i = 0; i < samples; ++i) {
+    //     if (accumulated_opacity > 0.98) break; // Early termination
         
     //     vec3 sample_point = current_pos.yzw;
     //     vec3 step_contribution = vec3(0.0);
     //     float step_opacity = 0.0;
         
-    //     // OPTIMISATION 1: Limit particles checked per sample
-    //     int particles_to_check = min(u_particle_count, 8);
+    //     // Get particles from current hash cell and neighbors
+    //     int particle_indices[9]; // Max particles to check
+    //     int particle_count = 0;
         
-    //     // OPTIMISATION 2: Early distance culling
-    //     int particles_processed = 0;
-    //     for (int p = 0; p < u_particle_count && particles_processed < particles_to_check; p++) {
-    //         vec4 pos_mass = getParticlePosition(p);
+    //     // Check current cell
+    //     getParticlesFromHashCell(sample_point, particle_indices, particle_count);
+        
+    //     // Check neighboring cells (simplified - just check a few key neighbors)
+    //     vec3 cell_offset = vec3(u_grid_cell_size * 0.5);
+    //     getParticlesFromHashCell(sample_point + vec3(cell_offset.x, 0, 0), particle_indices, particle_count);
+    //     getParticlesFromHashCell(sample_point + vec3(0, cell_offset.y, 0), particle_indices, particle_count);
+    //     getParticlesFromHashCell(sample_point + vec3(0, 0, cell_offset.z), particle_indices, particle_count);
+        
+    //     // Process only the nearby particles
+    //     for (int p = 0; p < particle_count; p++) {
+    //         int particle_idx = particle_indices[p];
+            
+    //         vec4 pos_mass = getParticlePosition(particle_idx);
     //         vec3 particle_pos = pos_mass.xyz;
             
-    //         // Quick distance check - skip if too far
     //         float dist = length(sample_point - particle_pos);
-    //         if (dist > 5.0) continue;
-
-    //         if (dist > max_particle_radius) {
-    //             continue;
+            
+    //         // Debug: Return red if too close
+    //         if (dist < 0.5) {
+    //             return vec3(1.0, 0.0, 0.0);
     //         }
             
-    //         particles_processed++;
-            
-    //         vec4 properties = getParticleProperties(p);
+    //         // Check if particle is within influence radius
+    //         vec4 properties = getParticleProperties(particle_idx);
     //         float smoothing_length = properties.z;
             
-    //         // More precise distance check
     //         if (dist < smoothing_length) {
-    //             vec3 particle_contrib = calculateParticleContribution(sample_point, p, observer_pos);
+    //             // Calculate particle contribution
+    //             vec3 particle_contrib = calculateParticleContribution(sample_point, particle_idx, observer_pos);
     //             step_contribution += particle_contrib;
                 
-    //             // Add to opacity based on particle density and kernel weight
-    //             vec4 vel_density = getParticleVelocity(p);
+    //             // Add to opacity
+    //             vec4 vel_density = getParticleVelocity(particle_idx);
     //             float density = vel_density.w;
     //             float kernel_weight = wendlandC2Kernel(dist, smoothing_length);
     //             step_opacity += density * kernel_weight * step_size * 0.1;

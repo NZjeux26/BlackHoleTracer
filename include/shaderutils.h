@@ -20,6 +20,11 @@ typedef struct {
     GLuint velocities_texture;    // RGBA32F: xyz = velocity, w = density  
     GLuint properties_texture;    // RGBA32F: x = temperature, y = pressure, z = smoothing_length, w = flags
     GLuint thermal_texture;       // RGBA32F: x = thermal_energy, y = radiative_cooling, z = heating_rate, w = unused
+   
+   // Add these for spatial hash
+    GLuint hash_indices_texture;  // Contains particle indices per hash cell
+    GLuint hash_counts_texture;   // Contains particle count per hash cell
+    
     int texture_size;             // Size of square texture (must be >= sqrt(max_particles))
 } SPHGPUData;
 
@@ -38,5 +43,5 @@ void upload_sph_particles_to_gpu(SPHSystem* sph_system, SPHGPUData* gpu_data);
 // Bind SPH textures to shader
 void bind_sph_textures_to_shader(GLuint shader_program, SPHGPUData* gpu_data, int particle_count);
 void cleanup_sph_gpu_data(SPHGPUData* gpu_data);
-void upload_hash_table_to_gpu(SPHSystem* sph_system, SPHGPUData* gpu_data);
+void upload_spatial_hash_to_gpu(SPHSystem* sph_system, SPHGPUData* gpu_data);
 #endif 

@@ -174,7 +174,7 @@ void set_shader_uniforms(GLuint program, BlackHoleParams params, int width, int 
     // Camera setup
     double aspect_ratio = (double)width / (double)height;
     double fov = 60.0 * M_PI / 180.0;
-    double theta = -20 * M_PI / 180.0; //the disk seems to be edge on at 270 so consider that 0 for mathing it above or below the disk
+    double theta = -10 * M_PI / 180.0; //the disk seems to be edge on at 270 so consider that 0 for mathing it above or below the disk
     double r = params.observer_distance;
     
    // Camera position in spherical coordinates -> Cartesian
@@ -369,6 +369,78 @@ void upload_sph_particles_to_gpu(SPHSystem* sph_system, SPHGPUData* gpu_data) {
     free(thermal_data);
 }
 
+void upload_spatial_hash_to_gpu(SPHSystem* sph_system, SPHGPUData* gpu_data) {
+    // Calculate texture size for hash table (next power of 2)
+    int hash_tex_size = 1;
+    while (hash_tex_size * hash_tex_size < sph_system->hash_table_size) {
+        hash_tex_size *= 2;
+    }
+    
+    printf("Hash table texture size: %d x %d for %d hash cells\n", 
+           hash_tex_size, hash_tex_size, sph_system->hash_table_size);
+    
+    // Allocate temporary arrays
+    float* hash_indices_data = calloc(hash_tex_size * hash_tex_size * 4, sizeof(float));
+    float* hash_counts_data = calloc(hash_tex_size * hash_tex_size * 4, sizeof(float));
+    
+    // Pack hash table data
+    for (int i = 0; i < sph_system->hash_table_size; i++) {
+        HashCell* cell = &sph_system->hash_table[i];
+        int idx = i * 4;
+        
+        // Store particle count in first component
+        hash_counts_data[idx] = (float)cell->count;
+        
+        // Store up to 3 particle indices per texel (can be extended)
+        for (int j = 0; j < 3 && j < cell->count; j++) {
+            hash_indices_data[idx + j] = (float)cell->particle_indices[j];
+        }
+        
+        // If more than 3 particles, you'll need multiple texels or a different approach
+        if (cell->count > 3) {
+            // For now, just take the first 3 - you can optimize this later
+            printf("Warning: Hash cell %d has %d particles (truncated to 3)\n", i, cell->count);
+        }
+    }
+    
+    // Create hash textures if they don't exist
+    if (gpu_data->hash_indices_texture == 0) {
+        glGenTextures(1, &gpu_data->hash_indices_texture);
+        glBindTexture(GL_TEXTURE_2D, gpu_data->hash_indices_texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, hash_tex_size, hash_tex_size, 
+                     0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    
+    if (gpu_data->hash_counts_texture == 0) {
+        glGenTextures(1, &gpu_data->hash_counts_texture);
+        glBindTexture(GL_TEXTURE_2D, gpu_data->hash_counts_texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, hash_tex_size, hash_tex_size,
+                     0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    
+    // Upload data
+    glBindTexture(GL_TEXTURE_2D, gpu_data->hash_indices_texture);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, hash_tex_size, hash_tex_size, 
+                    GL_RGBA, GL_FLOAT, hash_indices_data);
+    
+    glBindTexture(GL_TEXTURE_2D, gpu_data->hash_counts_texture);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, hash_tex_size, hash_tex_size,
+                    GL_RGBA, GL_FLOAT, hash_counts_data);
+    
+    glBindTexture(GL_TEXTURE_2D, 0);
+    
+    free(hash_indices_data);
+    free(hash_counts_data);
+}
+
 // Bind SPH textures to shader uniforms
 void bind_sph_textures_to_shader(GLuint shader_program, SPHGPUData* gpu_data, int particle_count) {
     glUseProgram(shader_program);
@@ -393,10 +465,21 @@ void bind_sph_textures_to_shader(GLuint shader_program, SPHGPUData* gpu_data, in
     glBindTexture(GL_TEXTURE_2D, gpu_data->thermal_texture);
     glUniform1i(glGetUniformLocation(shader_program, "u_particle_thermal"), 4);
 
+    // Add hash textures
+    glActiveTexture(GL_TEXTURE5);
+    glBindTexture(GL_TEXTURE_2D, gpu_data->hash_indices_texture);
+    glUniform1i(glGetUniformLocation(shader_program, "u_hash_indices"), 5);
+    
+    glActiveTexture(GL_TEXTURE6);
+    glBindTexture(GL_TEXTURE_2D, gpu_data->hash_counts_texture);
+    glUniform1i(glGetUniformLocation(shader_program, "u_hash_counts"), 6);
+
     // Send particle count and texture size
     glUniform1i(glGetUniformLocation(shader_program, "u_particle_count"), particle_count);
     glUniform1i(glGetUniformLocation(shader_program, "u_particle_texture_size"), gpu_data->texture_size);
-                
+    glUniform1f(glGetUniformLocation(shader_program, "u_grid_cell_size"), (float)GRID_CELL_SIZE);
+    glUniform1i(glGetUniformLocation(shader_program, "u_hash_table_size"), HASH_TABLE_SIZE);           
+   
     // Reset to texture unit 0
     glActiveTexture(GL_TEXTURE0);
 

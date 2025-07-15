@@ -40,7 +40,7 @@ void calculate_recommended_disk_params(BlackHoleParams* params) {
     params->disk.thickness = 0.1 + 0.4 * pow(params->isco_radius_prograde / 6.0, 0.5); // Thicker for slower-spinning BHs
     
     // Adjust temperature
-    params->disk.temperature_factor = 13000;
+    params->disk.temperature_factor = 9000;
       
     params->disk.opacity = 0.2;
     params->disk.brightness = 10.1;

@@ -114,7 +114,7 @@ int main() {
     BlackHoleParams params = init_BH_params(1.0, 0.2, 30.0); // Mass and distance from black hole
 
     // Initialize SPH system for accretion disk
-    SPHSystem* sph_system = sph_create_system(16348, &params); 
+    SPHSystem* sph_system = sph_create_system(32696, &params); 
     if (!sph_system) {
         fprintf(stderr, "Failed to create SPH system\n");
         // ... existing cleanup code ...
@@ -123,7 +123,7 @@ int main() {
 
     // Set up accretion disk particles
     printf("Initialising accretion disk particles...\n");
-    sph_initialise_accretion_disk(sph_system, &params, 4096);  // Inner radius: 6, Outer: 20, 4096 particles
+    sph_initialise_accretion_disk(sph_system, &params, 8096);  // Inner radius: 6, Outer: 20, 4096 particles
     sph_initialise_keplerian_velocities(sph_system);
     sph_initialise_thermal_equilibrium(sph_system);
 
@@ -172,11 +172,11 @@ int main() {
     bool save_image = true;
     bool should_render = true;
     bool particle_render = true;
-    int particle_steps = 100;
-    float dt = 0.01f;
+    int particle_steps = 1000;
+    float dt = 0.001f;
     
     //amx threads for particle simulation
-    omp_set_num_threads(10);
+    omp_set_num_threads(8);
     // Main loop
     while (running) {
         while (SDL_PollEvent(&event)) {
@@ -193,7 +193,7 @@ int main() {
         if(particle_render){
             printf("Particle Simulation Running!\n");
             
-            //#pragma omp parallel for schedule(static)
+            #pragma omp parallel for schedule(static)
             for(int i = 0; i < particle_steps; i++){
                 sph_update_system(sph_system,dt);
             }
@@ -201,11 +201,16 @@ int main() {
             particle_render = false;
             printf("Particle Simulation has ran for %d steps\n", particle_steps);
             
+            sph_build_hash_table(sph_system);
+
             // Upload particle data to GPU
             upload_sph_particles_to_gpu(sph_system, gpu_data);
+            upload_spatial_hash_to_gpu(sph_system, gpu_data);
+
             printf("Uploaded %d particles to GPU\n", sph_system->particle_count);
             printf("GPU texture size: %d x %d\n", gpu_data->texture_size, gpu_data->texture_size);
-
+            printf("Hash table size: %d cells\n", sph_system->hash_table_size);
+            
             printf("New Particle data:\n");
             //debug
             for (int i = 0; i < 5 && i < sph_system->particle_count; i++) {
