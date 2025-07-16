@@ -379,7 +379,7 @@ vec3 calculateParticleContribution(vec3 point, int particle_index, vec4 observer
 vec3 particleVolumetricRender(vec4 start_pos, vec4 ray_dir, float max_distance, vec4 observer_pos, mat4 frame) {
       // Debug: Return pure red to verify function is being called
     //return vec3(0.0, 1.0, 0.0);
-    int samples = 4;
+    int samples = 8;
     float step_size = max_distance / float(samples);
     vec4 current_pos = start_pos;
 

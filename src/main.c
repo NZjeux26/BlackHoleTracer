@@ -114,16 +114,21 @@ int main() {
     BlackHoleParams params = init_BH_params(1.0, 0.2, 30.0); // Mass and distance from black hole
 
     // Initialize SPH system for accretion disk
-    SPHSystem* sph_system = sph_create_system(32696, &params); 
+    SPHSystem* sph_system = sph_create_system(MAX_PARTICLES, &params); 
     if (!sph_system) {
         fprintf(stderr, "Failed to create SPH system\n");
         // ... existing cleanup code ...
         return 1;
     }
 
+    // Set OpenMP thread count once at startup
+    omp_set_num_threads(6);
+    // Verify the setting
+    printf("Using %d OpenMP threads\n", omp_get_max_threads());
+
     // Set up accretion disk particles
     printf("Initialising accretion disk particles...\n");
-    sph_initialise_accretion_disk(sph_system, &params, 8096);  // Inner radius: 6, Outer: 20, 4096 particles
+    sph_initialise_accretion_disk(sph_system, &params, MAX_PARTICLES);  // Inner radius: 6, Outer: 20, 4096 particles
     sph_initialise_keplerian_velocities(sph_system);
     sph_initialise_thermal_equilibrium(sph_system);
 
@@ -153,11 +158,11 @@ int main() {
         fprintf(stderr, "IMG_Init failed: %s\n", IMG_GetError());
     }
 
-    printf("Starting raytracing.....\n");
-    clock_t start_time, end_time;
-    double cpu_time_used;
-
-    start_time = clock();
+    // Timing variables
+    clock_t particle_start_time, particle_end_time;
+    clock_t gpu_start_time, gpu_end_time;
+    double particle_time_used = 0.0;
+    double gpu_time_used = 0.0;
 
     // Set viewport
     glViewport(0, 0, width, height);
@@ -172,11 +177,11 @@ int main() {
     bool save_image = true;
     bool should_render = true;
     bool particle_render = true;
-    int particle_steps = 1000;
-    float dt = 0.001f;
+    int particle_steps = 1250;
+    float dt = 0.01f;
     
     //amx threads for particle simulation
-    omp_set_num_threads(8);
+    
     // Main loop
     while (running) {
         while (SDL_PollEvent(&event)) {
@@ -192,14 +197,17 @@ int main() {
         
         if(particle_render){
             printf("Particle Simulation Running!\n");
+            particle_start_time = clock();
             
-            #pragma omp parallel for schedule(static)
             for(int i = 0; i < particle_steps; i++){
                 sph_update_system(sph_system,dt);
             }
             
+            particle_end_time = clock();
+            particle_time_used = ((double)(particle_end_time - particle_start_time)) / CLOCKS_PER_SEC;
+
             particle_render = false;
-            printf("Particle Simulation has ran for %d steps\n", particle_steps);
+            printf("Particle simulation completed in: %f seconds (%d steps)\n", particle_time_used, particle_steps);
             
             sph_build_hash_table(sph_system);
 
@@ -228,6 +236,9 @@ int main() {
             // Clear screen
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
+            
+            printf("Starting GPU rendering...\n");
+            gpu_start_time = clock();
             
             err = glGetError();
             if (err != GL_NO_ERROR) {
@@ -294,14 +305,22 @@ int main() {
                 save_framebuffer_to_png(width, height, "Images/blackhole_gpu.png");
                 save_image = false;
                 should_render = false; // Stop rendering after saving the image
-    
-                end_time = clock();
-                cpu_time_used = ((double)(end_time - start_time)) / CLOCKS_PER_SEC;
-                printf("GPU raytracing completed in: %f seconds\n", cpu_time_used);
             }
             
             // Swap buffers
             SDL_GL_SwapWindow(window);
+            gpu_end_time = clock();
+            gpu_time_used = ((double)(gpu_end_time - gpu_start_time)) / CLOCKS_PER_SEC;
+            
+            printf("GPU rendering completed in: %f seconds\n", gpu_time_used);
+            // Print total time summary
+            if (!should_render) { // Only print summary when done
+                printf("\n=== TIMING SUMMARY ===\n");
+                printf("Particle simulation: %f seconds\n", (particle_time_used / 6)); //using six threads so this should be about right
+                printf("GPU rendering: %f seconds\n", gpu_time_used);
+                printf("Total time: %f seconds\n", (particle_time_used / 6) + gpu_time_used);
+                printf("====================\n");
+            }
         }
         else SDL_Delay(60); // Wait if not rendering
          

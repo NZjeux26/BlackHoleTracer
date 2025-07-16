@@ -12,9 +12,9 @@
 /*Look at breaking this up into multiple smaller headers eg SPH_physics, SPH_Core, SPH_Blackhole, SPH_Utils etc*/
 
 // SPH Configuration constants
-#define MAX_PARTICLES            65536       // Maximum number of particles **This will need to be dropped in size heavily for testing
+#define MAX_PARTICLES            131072       // Maximum number of particles **This will need to be dropped in size heavily for testing
 #define MAX_NEIGHBORS            64          // Maximum neighbors per particle
-#define HASH_TABLE_SIZE          262144      // Spatial hash table size (power of 2)
+#define HASH_TABLE_SIZE          524288      // Spatial hash table size (power of 2)
 #define GRID_CELL_SIZE           0.5         // Size of spatial grid cells
 #define SPH_KERNEL_RADIUS        1.0
 #define SPH_KERNEL_RADIUS_SQ     (SPH_KERNEL_RADIUS * SPH_KERNEL_RADIUS)
@@ -84,7 +84,7 @@ typedef struct {
 
 // Spatial hash cell
 typedef struct {
-    uint32_t particle_indices[32];
+    uint32_t particle_indices[64];
     int count;
 } HashCell;
 

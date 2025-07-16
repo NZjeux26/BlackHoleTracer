@@ -8,7 +8,7 @@ TARGET = BlackHoleTracer
 OMP_INC = /opt/homebrew/opt/libomp/include
 OMP_LIB = /opt/homebrew/opt/libomp/lib
 
-CFLAGS = -g -Wall -Iinclude \
+CFLAGS = -g -O2 -Wall -Iinclude \
  -I/opt/homebrew/opt/sdl2/include/SDL2 \
  -I/opt/homebrew/Cellar/sdl2_image/2.8.8/include/SDL2 \
  -I/opt/homebrew/Cellar/glew/2.2.0_1/include \

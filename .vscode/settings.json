@@ -3,7 +3,8 @@
         "math.h": "c",
         "stdbool.h": "c",
         "__locale": "c",
-        "stdint.h": "c"
+        "stdint.h": "c",
+        "types.h": "c"
     },
     "C_Cpp.default.compilerPath": "/usr/bin/clang"
 }
