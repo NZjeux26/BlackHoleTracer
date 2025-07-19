@@ -18,14 +18,23 @@
 int main() {
     int width = 1200; // Set the width of the window
     int height = 900; // Set the height of the window
-
+    printf("BlackHoleTracer starting...\n");
+    fflush(stdout);
     #ifdef _OPENMP
     printf("OpenMP IS available - compiled with OpenMP support\n");
     printf("Max threads: %d\n", omp_get_max_threads());
     #else
     printf("OpenMP NOT available - not compiled with OpenMP support\n");
     #endif
-
+    
+    short threads = 6;
+    // Set OpenMP thread count once at startup
+    omp_set_num_threads(threads);
+    // Verify the setting
+    printf("Using %d OpenMP threads\n", threads);
+    
+    srand((unsigned int)time(NULL));//SHouldn't this be clock or something?
+    
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         fprintf(stderr, "SDL initialization failed: %s\n", SDL_GetError());
@@ -121,20 +130,18 @@ int main() {
         return 1;
     }
 
-    // Set OpenMP thread count once at startup
-    omp_set_num_threads(6);
-    // Verify the setting
-    printf("Using %d OpenMP threads\n", omp_get_max_threads());
-
     // Set up accretion disk particles
     printf("Initialising accretion disk particles...\n");
-    sph_initialise_accretion_disk(sph_system, &params, MAX_PARTICLES);  // Inner radius: 6, Outer: 20, 4096 particles
+    sph_initialise_accretion_disk(sph_system, &params, 65536);  // Inner radius: 6, Outer: 20, 4096 particles
     sph_initialise_keplerian_velocities(sph_system);
     sph_initialise_thermal_equilibrium(sph_system);
 
     printf("SPH system initialised with %d particles\n", sph_system->particle_count);
 
-    for (int i = 0; i < 5 && i < sph_system->particle_count; i++) {
+    for (int n = 0; n < 10; n++) {
+        int i = n * 1000;
+        if (i >= sph_system->particle_count) break;
+
         printf("Particle %d: pos(%.2f,%.2f,%.2f) vel(%.2f,%.2f,%.2f)\n", 
             i, sph_system->particles[i].position.x, 
             sph_system->particles[i].position.y, 
@@ -177,8 +184,8 @@ int main() {
     bool save_image = true;
     bool should_render = true;
     bool particle_render = true;
-    int particle_steps = 1250;
-    float dt = 0.01f;
+    int particle_steps = 1000;
+    float dt = 0.05f;
     
     //amx threads for particle simulation
     
@@ -201,6 +208,10 @@ int main() {
             
             for(int i = 0; i < particle_steps; i++){
                 sph_update_system(sph_system,dt);
+                //Print an update so you know where in the program you are.
+                if(i % 100 == 0){
+                    printf("%d Particle Steps Completed\n", i); //this will output the time fromt he beginning to this step, not between steps
+                }
             }
             
             particle_end_time = clock();
@@ -221,7 +232,10 @@ int main() {
             
             printf("New Particle data:\n");
             //debug
-            for (int i = 0; i < 5 && i < sph_system->particle_count; i++) {
+           for (int n = 0; n < 10; n++) {
+                int i = n * 1000;
+                if (i >= sph_system->particle_count) break;
+
                 printf("Particle %d: pos(%.2f,%.2f,%.2f) vel(%.2f,%.2f,%.2f)\n", 
                     i, sph_system->particles[i].position.x, 
                     sph_system->particles[i].position.y, 

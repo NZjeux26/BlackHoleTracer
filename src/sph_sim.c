@@ -59,7 +59,7 @@ SPHSystem* sph_create_system(int max_particles, BlackHoleParams* black_hole) {
     system->surface_tension = SURFACE_TENSION;
     system->thermal_conductivity = THERMAL_CONDUCTIVITY;
 
-      // Set black hole reference
+    // Set black hole reference
     system->black_hole = black_hole;
 
     // initialise time stepping parameters ** these need to match those in BlackholeParams
@@ -76,6 +76,27 @@ SPHSystem* sph_create_system(int max_particles, BlackHoleParams* black_hole) {
     system->last_update_time = 0.0;
     system->neighbor_searches = 0;
     system->density_calculations = 0;
+
+    // Allocate RK4 working arrays
+    system->rk4_k1_pos = malloc(max_particles * sizeof(Vec3));
+    system->rk4_k1_vel = malloc(max_particles * sizeof(Vec3));
+    system->rk4_k2_pos = malloc(max_particles * sizeof(Vec3));
+    system->rk4_k2_vel = malloc(max_particles * sizeof(Vec3));
+    system->rk4_k3_pos = malloc(max_particles * sizeof(Vec3));
+    system->rk4_k3_vel = malloc(max_particles * sizeof(Vec3));
+    system->rk4_k4_pos = malloc(max_particles * sizeof(Vec3));
+    system->rk4_k4_vel = malloc(max_particles * sizeof(Vec3));
+    system->rk4_original_pos = malloc(max_particles * sizeof(Vec3));
+    system->rk4_original_vel = malloc(max_particles * sizeof(Vec3));
+    
+    // Check for allocation failures
+    if (!system->rk4_k1_pos || !system->rk4_k1_vel || !system->rk4_k2_pos || 
+        !system->rk4_k2_vel || !system->rk4_k3_pos || !system->rk4_k3_vel || 
+        !system->rk4_k4_pos || !system->rk4_k4_vel || !system->rk4_original_pos || 
+        !system->rk4_original_vel) {
+        sph_destroy_system(system);
+        return NULL;
+    }
 
     printf("SPH System created successfully:\n");
     printf("  Max particles: %d\n", max_particles);
@@ -112,13 +133,25 @@ void sph_destroy_system(SPHSystem* system) {
 
     // Note: We don't free black_hole as it's owned by the caller
     system->black_hole = NULL;
-
+    
+    // Free RK4 working arrays
+    free(system->rk4_k1_pos);
+    free(system->rk4_k1_vel);
+    free(system->rk4_k2_pos);
+    free(system->rk4_k2_vel);
+    free(system->rk4_k3_pos);
+    free(system->rk4_k3_vel);
+    free(system->rk4_k4_pos);
+    free(system->rk4_k4_vel);
+    free(system->rk4_original_pos);
+    free(system->rk4_original_vel);
+    
     // Free the system structure itself
     free(system);
 
     printf("SPH system destroyed successfully\n");
 }
-
+//NOT USED
 void sph_reset_system(SPHSystem* system) {
     if (!system) {
         fprintf(stderr, "Error: Cannot reset NULL system\n");
@@ -173,7 +206,7 @@ void sph_update_system(SPHSystem* system, double dt) {
     #pragma omp parallel for schedule(dynamic, 64)
     for (int i = 0; i < system->particle_count; i++) {
         if (system->particles[i].flags & PARTICLE_ACTIVE) {
-            sph_find_neighbors(system, i);
+            sph_find_neighbours(system, i);
         }
     }
     
@@ -252,7 +285,7 @@ int sph_add_particle(SPHSystem* system, Vec3 position, Vec3 velocity, double mas
     particle->neighbor_count = 0;
     
     // Clear neighbor list
-    memset(particle->neighbors, 0, MAX_NEIGHBORS * sizeof(uint32_t));
+    memset(particle->neighbours, 0, MAX_NEIGHBORS * sizeof(uint32_t));
     
     // initialise Kerr black hole coordinates (Boyer-Lindquist)
     if (system->black_hole) {
@@ -337,7 +370,7 @@ void sph_remove_particle(SPHSystem* system, int index) {
  * @param density Density value to set
  * @param temperature Temperature value to set
  * @param flags Particle flags to set
- */
+ */ //NOT USED
 void sph_set_particle_properties(SPHSystem* system, int index, double density,
                                  double temperature, uint32_t flags) {
     // Validate input parameters
@@ -425,7 +458,7 @@ void sph_set_particle_properties(SPHSystem* system, int index, double density,
  * @param system Pointer to the SPH system
  * @param index Index of the particle to validate
  * @return true if particle properties are valid, false otherwise
- */
+ */ //NOT USED
 bool sph_validate_particle_properties(SPHSystem* system, int index) {
     if (!system || !system->particles || index < 0 || index >= system->particle_count) {
         return false;
@@ -616,7 +649,7 @@ void sph_initialise_keplerian_velocities(SPHSystem* system) {
 }
 
 // initialise thermal equilibrium based on accretion physics
-void sph_initialise_thermal_equilibrium(SPHSystem* system) {
+void sph_initialise_thermal_equilibrium(SPHSystem* system) { //this is never called anywhere
     if (!system || !system->black_hole) {
         fprintf(stderr, "Invalid system for thermal equilibrium initialization\n");
         return;
@@ -642,7 +675,7 @@ void sph_initialise_thermal_equilibrium(SPHSystem* system) {
                            particle->position.y * particle->position.y);
         
         // Simplified temperature profile (decreases with radius) ***This or maybe the blackbody code I have
-        double base_temp = 2000.0; // K
+        double base_temp = 5000.0; // K started at 1000
         double temp_scale = pow(r_cyl / 10.0, -0.75); // r^(-3/4) scaling
         particle->temperature = base_temp * temp_scale;
         
@@ -776,8 +809,8 @@ void sph_build_hash_table(SPHSystem* system) {
         }
     }
 }
-//US Spelling
-void sph_find_neighbors(SPHSystem* system, int particle_index) {
+
+void sph_find_neighbours(SPHSystem* system, int particle_index) {
     if (!system || particle_index < 0 || particle_index >= system->particle_count) return;
     
     SPHParticle* particle = &system->particles[particle_index];
@@ -824,12 +857,12 @@ void sph_find_neighbors(SPHSystem* system, int particle_index) {
                     
                     // Check if within kernel radius
                     if (dist_sq < h * h && particle->neighbor_count < MAX_NEIGHBORS) {
-                        particle->neighbors[particle->neighbor_count] = neighbor_idx;
+                        particle->neighbours[particle->neighbor_count] = neighbor_idx;
                         particle->neighbor_count++;
                     }
                 }
                 
-                // Early exit if we've found enough neighbors
+                // Early exit if we've found enough neighbours
                 if (particle->neighbor_count >= MAX_NEIGHBORS) {
                     return;
                 }
@@ -888,37 +921,23 @@ double sph_wendland_c2_gradient(double r, double h) {
 
 // Laplacian of Wendland C2 kernel
 double sph_wendland_c2_laplacian(double r, double h) {
-    if (h <= 0.0) return 0.0;
+      if (h <= 0.0) return 0.0;
     
     double q = r / h;
-    
-    // Compact support
     if (q >= 2.0) return 0.0;
     
-    // For very small r, use analytical limit
-    if (r < 1e-10) {
-        double alpha_3d = 21.0 / (2.0 * M_PI * h * h * h);
-        return (alpha_3d / (h * h)) * (-10.0); // Limit as r->0
-    }
-    
-    // Normalisation constant for 3D
+    // Simple approximation: Laplacian ≈ -constant/h²
+    // This captures the essential behavior for thermal diffusion
     double alpha_3d = 21.0 / (2.0 * M_PI * h * h * h);
     
-    // Laplacian in 3D: ∇²W = d²W/dr² + (2/r) * dW/dr
-    double factor = 1.0 - 0.5 * q;
-    double factor2 = factor * factor;
-    double factor3 = factor2 * factor;
-    
-    // First derivative terms
-    double dw_dq = -2.0 * factor3 * (2.0 * q + 1.0) + 2.0 * factor2 * factor;
-    
-    // Second derivative
-    double d2w_dq2 = 6.0 * factor2 * (2.0 * q + 1.0) - 8.0 * factor3;
-    
-    double d2w_dr2 = (alpha_3d / (h * h)) * d2w_dq2;
-    double dw_dr = (alpha_3d / h) * dw_dq;
-    
-    return d2w_dr2 + (2.0 / r) * dw_dr;
+    if (q < 0.1) {
+        // For small r, use a constant negative value
+        return -alpha_3d / (h * h) * 10.0;
+    } else {
+        // For larger r, decay with distance
+        double factor = 1.0 - 0.5 * q;
+        return -alpha_3d / (h * h) * factor * factor;
+    }
 }
 
 // Calculate kernel gradient vector between two particles
@@ -962,8 +981,8 @@ Vec3 sph_calculate_kernel_gradient(Vec3 ri, Vec3 rj, double h, int kernelType) {
     Vec3 unit_vector = vec3_scale(r_ij, 1.0 / r);
     return vec3_scale(unit_vector, grad_magnitude);
 }
-
-// Calculate kernel Laplacian between two particles
+//NOT USED
+// Calculate kernel Laplacian between two particles **USe a simpler version for performance and robustness
 double sph_calculate_kernel_laplacian(Vec3 ri, Vec3 rj, double h, int kernelType) {
     Vec3 r_ij = vec3_sub(ri, rj);
     double r = vec3_length(r_ij);
@@ -1020,7 +1039,7 @@ void sph_calculate_density(SPHSystem* system) {
         
         // Neighbor contributions
         for (int n = 0; n < particle_i->neighbor_count; n++) {
-            int j = particle_i->neighbors[n];
+            int j = particle_i->neighbours[n];
             if (j >= system->particle_count || i == j) continue;
             
             SPHParticle* particle_j = &system->particles[j];
@@ -1052,47 +1071,37 @@ void sph_calculate_pressure(SPHSystem* system) {
     for (int i = 0; i < system->particle_count; i++) {
         SPHParticle* particle = &system->particles[i];
         
-        // Skip inactive particles
         if (!(particle->flags & PARTICLE_ACTIVE)) continue;
         
-        // Tait equation of state: P = k * ((ρ/ρ₀)^γ - 1)
-        // For weakly compressible fluid, use gas constant directly
-        double density_ratio = particle->density / system->rest_density;
+        // Simple ideal gas: P = k * (ρ - ρ₀) + P_thermal
+        double density_diff = particle->density - system->rest_density;
+        particle->pressure = system->gas_constant * density_diff;
         
-        if (density_ratio > 1.0) {
-            // Standard gas law for compressible regions
-            particle->pressure = system->gas_constant * (density_ratio - 1.0);
-        } else {
-            // Small negative pressure allowed for slight under-density
-            particle->pressure = system->gas_constant * (density_ratio - 1.0) * 0.1;
-        }
-        
-        // Add thermal pressure component
+        // Add thermal pressure: P_thermal = ρ * R_specific * T
         if (particle->temperature > 0.0) {
-            // P_thermal = ρ * R * T (simplified ideal gas)
-            double thermal_pressure = particle->density * 0.1 * particle->temperature / 1000.0;
-            particle->pressure += thermal_pressure;
+            particle->pressure += particle->density * particle->temperature * 0.01; // R_specific
         }
         
-        // Ensure non-negative pressure for stability
-        if (particle->pressure < 0.0) particle->pressure = 0.0;
+        // Allow small negative pressures but prevent extreme values
+        if (particle->pressure < -system->gas_constant) {
+            particle->pressure = -system->gas_constant * 0.1;
+        }
     }
 }
 
 // Calculate pressure and viscosity forces on all particles
 void sph_calculate_forces(SPHSystem* system) {
-    if (!system) return;
-     
+     if (!system) return;
     
-    #pragma omp parallel for schedule(dynamic)
     // Reset accelerations
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < system->particle_count; i++) {
         if (system->particles[i].flags & PARTICLE_ACTIVE) {
             system->particles[i].acceleration = (Vec3){0.0, 0.0, 0.0};
         }
     }
     
-    // Calculate pairwise forces
+    // Calculate pairwise forces using thread-safe approach
     #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < system->particle_count; i++) {
         SPHParticle* particle_i = &system->particles[i];
@@ -1100,36 +1109,79 @@ void sph_calculate_forces(SPHSystem* system) {
         if (!(particle_i->flags & PARTICLE_ACTIVE)) continue;
         
         double h_i = particle_i->smoothing_length;
+        Vec3 total_force = {0.0, 0.0, 0.0};
         
+        // Validate particle i data
+        if (particle_i->density <= 0.0 || particle_i->mass <= 0.0 || h_i <= 0.0) {
+            continue;
+        }
+        
+        // Process all neighbors for this particle
         for (int n = 0; n < particle_i->neighbor_count; n++) {
-            int j = particle_i->neighbors[n];
-            if (j >= system->particle_count || i >= j) continue; // Avoid double counting
+            int j = particle_i->neighbours[n];
+            
+            // Bounds check
+            if (j < 0 || j >= system->particle_count || j == i) continue;
             
             SPHParticle* particle_j = &system->particles[j];
             if (!(particle_j->flags & PARTICLE_ACTIVE)) continue;
+            
+            // Validate particle j data
+            if (particle_j->density <= 0.0 || particle_j->mass <= 0.0 || 
+                particle_j->smoothing_length <= 0.0) {
+                continue;
+            }
             
             Vec3 dr = vec3_sub(particle_i->position, particle_j->position);
             double r = vec3_length(dr);
             
             if (r < 1e-10) continue; // Avoid singularity
             
-            double h_avg = (h_i + particle_j->smoothing_length) * 0.5;
+            // Use maximum smoothing length for interaction range
+            double h_max = fmax(h_i, particle_j->smoothing_length);
             
-            if (r < h_avg) {
+            if (r < h_max) {
                 Vec3 dr_unit = vec3_scale(dr, 1.0 / r);
                 
-                // Pressure force (symmetric)
-                double pressure_term = (particle_i->pressure / (particle_i->density * particle_i->density)) +
-                                     (particle_j->pressure / (particle_j->density * particle_j->density));
+                // Pressure force calculation with validation
+                double pressure_term_i = particle_i->pressure / (particle_i->density * particle_i->density);
+                double pressure_term_j = particle_j->pressure / (particle_j->density * particle_j->density);
                 
+                // Check for NaN or infinite values
+                if (!isfinite(pressure_term_i) || !isfinite(pressure_term_j)) {
+                    continue;
+                }
+                
+                double pressure_term = pressure_term_i + pressure_term_j;
+                
+                // Calculate kernel gradient at average smoothing length
+                double h_avg = (h_i + particle_j->smoothing_length) * 0.5;
                 double kernel_grad = sph_wendland_c2_gradient(r, h_avg);
-                Vec3 pressure_force = vec3_scale(dr_unit, -particle_j->mass * pressure_term * kernel_grad);
                 
-                // Apply Newton's 3rd law
-                particle_i->acceleration = vec3_add(particle_i->acceleration, 
-                                                  vec3_scale(pressure_force, 1.0 / particle_i->mass));
-                particle_j->acceleration = vec3_sub(particle_j->acceleration, 
-                                                  vec3_scale(pressure_force, 1.0 / particle_j->mass));
+                if (!isfinite(kernel_grad) || kernel_grad == 0.0) {
+                    continue;
+                }
+                
+                // Force magnitude
+                double force_magnitude = -particle_j->mass * pressure_term * kernel_grad;
+                
+                if (!isfinite(force_magnitude)) {
+                    continue;
+                }
+                
+                // Accumulate force on particle i (thread-safe since only this thread modifies total_force)
+                Vec3 pressure_force = vec3_scale(dr_unit, force_magnitude);
+                total_force = vec3_add(total_force, pressure_force);
+            }
+        }
+        
+        // Convert force to acceleration for particle i
+        if (particle_i->mass > 0.0) {
+            Vec3 pressure_accel = vec3_scale(total_force, 1.0 / particle_i->mass);
+            
+            // Validate acceleration
+            if (isfinite(pressure_accel.x) && isfinite(pressure_accel.y) && isfinite(pressure_accel.z)) {
+                particle_i->acceleration = vec3_add(particle_i->acceleration, pressure_accel);
             }
         }
         
@@ -1138,7 +1190,20 @@ void sph_calculate_forces(SPHSystem* system) {
             Vec3 bh_accel = sph_calculate_kerr_acceleration(particle_i->position, 
                                                            particle_i->velocity, 
                                                            system->black_hole);
-            particle_i->acceleration = vec3_add(particle_i->acceleration, bh_accel);
+            
+            // Validate black hole acceleration
+            if (isfinite(bh_accel.x) && isfinite(bh_accel.y) && isfinite(bh_accel.z)) {
+                particle_i->acceleration = vec3_add(particle_i->acceleration, bh_accel);
+            }
+        }
+        
+        // Final validation of particle acceleration
+        if (!isfinite(particle_i->acceleration.x) || 
+            !isfinite(particle_i->acceleration.y) || 
+            !isfinite(particle_i->acceleration.z)) {
+            
+            // Reset to zero if invalid
+            particle_i->acceleration = (Vec3){0.0, 0.0, 0.0};
         }
     }
 }
@@ -1146,8 +1211,13 @@ void sph_calculate_forces(SPHSystem* system) {
 // Calculate viscosity forces separately for clarity
 void sph_calculate_viscosity_forces(SPHSystem* system) {
     if (!system || system->viscosity_coeff <= 0.0) return;
-     
-    #pragma omp parallel for schedule(dynamic)
+    
+    // Pre-compute once
+    const double c_s = sqrt(system->gas_constant);
+    const double alpha = system->viscosity_coeff;
+    const double beta = 2.0 * alpha;
+
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < system->particle_count; i++) {
         SPHParticle* particle_i = &system->particles[i];
         
@@ -1157,7 +1227,7 @@ void sph_calculate_viscosity_forces(SPHSystem* system) {
         double h_i = particle_i->smoothing_length;
         
         for (int n = 0; n < particle_i->neighbor_count; n++) {
-            int j = particle_i->neighbors[n];
+            int j = particle_i->neighbours[n];
             if (j >= system->particle_count || i == j) continue;
             
             SPHParticle* particle_j = &system->particles[j];
@@ -1178,10 +1248,6 @@ void sph_calculate_viscosity_forces(SPHSystem* system) {
                 
                 if (v_dot_r < 0.0) { // Only apply if particles approaching
                     double rho_avg = (particle_i->density + particle_j->density) * 0.5;
-                    double c_s = sqrt(system->gas_constant); // Sound speed approximation
-                    
-                    double alpha = system->viscosity_coeff;
-                    double beta = 2.0 * alpha;
                     
                     double mu = h_avg * v_dot_r / (r * r + 0.01 * h_avg * h_avg);
                     double pi_visc = (-alpha * c_s * mu + beta * mu * mu) / rho_avg;
@@ -1199,7 +1265,7 @@ void sph_calculate_viscosity_forces(SPHSystem* system) {
     }
 }
 
-// Calculate surface tension forces
+// Calculate surface tension forces **NOT USED (Does it need to be?)
 void sph_calculate_surface_tension_forces(SPHSystem* system) {
     if (!system || system->surface_tension <= 0.0) return;
      
@@ -1216,7 +1282,7 @@ void sph_calculate_surface_tension_forces(SPHSystem* system) {
         double h_i = particle_i->smoothing_length;
         
         for (int n = 0; n < particle_i->neighbor_count; n++) {
-            int j = particle_i->neighbors[n];
+            int j = particle_i->neighbours[n];
             if (j >= system->particle_count || i == j) continue;
             
             SPHParticle* particle_j = &system->particles[j];
@@ -1283,7 +1349,7 @@ void sph_calculate_surface_tension_forces(SPHSystem* system) {
 
 // Calculate thermal diffusion
 void sph_calculate_thermal_diffusion(SPHSystem* system) {
-    if (!system || system->thermal_conductivity <= 0.0) return;
+     if (!system || system->thermal_conductivity <= 0.0) return;
      
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < system->particle_count; i++) {
@@ -1295,7 +1361,7 @@ void sph_calculate_thermal_diffusion(SPHSystem* system) {
         double h_i = particle_i->smoothing_length;
         
         for (int n = 0; n < particle_i->neighbor_count; n++) {
-            int j = particle_i->neighbors[n];
+            int j = particle_i->neighbours[n];
             if (j >= system->particle_count || i == j) continue;
             
             SPHParticle* particle_j = &system->particles[j];
@@ -1309,21 +1375,19 @@ void sph_calculate_thermal_diffusion(SPHSystem* system) {
             double h_avg = (h_i + particle_j->smoothing_length) * 0.5;
             
             if (r < h_avg) {
-                // Temperature difference
                 double dT = particle_j->temperature - particle_i->temperature;
+                if (fabs(dT) < 1e-10) continue;
                 
-                // Thermal diffusion coefficient (average)
+                // Keep thermal_diffusion as coefficient, don't overwrite it
                 double k_avg = (particle_i->thermal_diffusion + particle_j->thermal_diffusion) * 0.5;
-                
-                // Laplacian of temperature approximation
                 double kernel_lapl = sph_wendland_c2_laplacian(r, h_avg);
                 
                 thermal_diffusion_rate += k_avg * particle_j->mass * dT * kernel_lapl / particle_j->density;
             }
         }
         
-        // Update thermal diffusion rate
-        particle_i->thermal_diffusion = thermal_diffusion_rate;
+        // Apply directly to thermal_energy instead of overwriting thermal_diffusion
+        particle_i->thermal_energy += thermal_diffusion_rate * system->dt;
     }
 }
 
@@ -1525,7 +1589,7 @@ bool sph_check_event_horizon_crossing(Vec3 position, BlackHoleParams* bh) {
 void sph_integrate_rk4(SPHSystem* system, double dt) {
     if (!system || dt <= 0.0) return;
     
-     // Handle adaptive time stepping inside RK4
+     // Handle adaptive time stepping inside RK4 ** this could probably be removed
     if (system->adaptive_time_step) {
         double adaptive_dt = sph_calculate_adaptive_time_step(system);
         if (adaptive_dt > 0.0 && adaptive_dt < dt) {
@@ -1534,40 +1598,37 @@ void sph_integrate_rk4(SPHSystem* system, double dt) {
     }
     system->dt = dt;  // Store the actual dt being used
     
-    // Temporary storage for RK4 stages
-    Vec3* k1_pos = malloc(system->particle_count * sizeof(Vec3));
-    Vec3* k1_vel = malloc(system->particle_count * sizeof(Vec3));
-    Vec3* k2_pos = malloc(system->particle_count * sizeof(Vec3));
-    Vec3* k2_vel = malloc(system->particle_count * sizeof(Vec3));
-    Vec3* k3_pos = malloc(system->particle_count * sizeof(Vec3));
-    Vec3* k3_vel = malloc(system->particle_count * sizeof(Vec3));
-    Vec3* k4_pos = malloc(system->particle_count * sizeof(Vec3));
-    Vec3* k4_vel = malloc(system->particle_count * sizeof(Vec3));
+    // pre-allocated arrays
+    Vec3* k1_pos = system->rk4_k1_pos;
+    Vec3* k1_vel = system->rk4_k1_vel;
+    Vec3* k2_pos = system->rk4_k2_pos;
+    Vec3* k2_vel = system->rk4_k2_vel;
+    Vec3* k3_pos = system->rk4_k3_pos;
+    Vec3* k3_vel = system->rk4_k3_vel;
+    Vec3* k4_pos = system->rk4_k4_pos;
+    Vec3* k4_vel = system->rk4_k4_vel;
+    Vec3* original_pos = system->rk4_original_pos;
+    Vec3* original_vel = system->rk4_original_vel;
     
-    Vec3* original_pos = malloc(system->particle_count * sizeof(Vec3));
-    Vec3* original_vel = malloc(system->particle_count * sizeof(Vec3));
-    
-    if (!k1_pos || !k1_vel || !k2_pos || !k2_vel || !k3_pos || !k3_vel || 
-        !k4_pos || !k4_vel || !original_pos || !original_vel) {
-        fprintf(stderr, "Memory allocation failed in RK4 integration\n");
-        goto cleanup;
-    }
-    
-    #pragma omp parallel for schedule(static)
     // Store original state
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < system->particle_count; i++) {
         if (system->particles[i].flags & PARTICLE_ACTIVE) {
             original_pos[i] = system->particles[i].position;
             original_vel[i] = system->particles[i].velocity;
         }
     }
+    //update once
+    sph_update_smoothing_lengths(system);
     
     // Stage 1: k1 = f(t, y)
     sph_build_hash_table(system);
     sph_calculate_density(system);
     sph_calculate_pressure(system);
+    sph_calculate_thermal_diffusion(system);
     sph_calculate_forces(system);
-    sph_calculate_viscosity_forces(system);
+    //sph_calculate_viscosity_forces(system);
+    
     
     for (int i = 0; i < system->particle_count; i++) {
         if (system->particles[i].flags & PARTICLE_ACTIVE) {
@@ -1589,8 +1650,9 @@ void sph_integrate_rk4(SPHSystem* system, double dt) {
     sph_build_hash_table(system);
     sph_calculate_density(system);
     sph_calculate_pressure(system);
+    sph_calculate_thermal_diffusion(system);
     sph_calculate_forces(system);
-    sph_calculate_viscosity_forces(system);
+    //sph_calculate_viscosity_forces(system);
     
     for (int i = 0; i < system->particle_count; i++) {
         if (system->particles[i].flags & PARTICLE_ACTIVE) {
@@ -1612,8 +1674,9 @@ void sph_integrate_rk4(SPHSystem* system, double dt) {
     sph_build_hash_table(system);
     sph_calculate_density(system);
     sph_calculate_pressure(system);
+    sph_calculate_thermal_diffusion(system);
     sph_calculate_forces(system);
-    sph_calculate_viscosity_forces(system);
+    //sph_calculate_viscosity_forces(system);
     
     for (int i = 0; i < system->particle_count; i++) {
         if (system->particles[i].flags & PARTICLE_ACTIVE) {
@@ -1635,9 +1698,10 @@ void sph_integrate_rk4(SPHSystem* system, double dt) {
     sph_build_hash_table(system);
     sph_calculate_density(system);
     sph_calculate_pressure(system);
+    sph_calculate_thermal_diffusion(system); //this is causing a lot of issues!
     sph_calculate_forces(system);
     sph_calculate_viscosity_forces(system);
-    
+
     for (int i = 0; i < system->particle_count; i++) {
         if (system->particles[i].flags & PARTICLE_ACTIVE) {
             k4_pos[i] = system->particles[i].velocity;
@@ -1667,9 +1731,9 @@ void sph_integrate_rk4(SPHSystem* system, double dt) {
             system->particles[i].position = vec3_add(original_pos[i], pos_increment);
             system->particles[i].velocity = vec3_add(original_vel[i], vel_increment);
             
-            // Apply damping
-            system->particles[i].velocity = vec3_scale(system->particles[i].velocity, 
-                                                      DAMPING_FACTOR);
+            // // Apply damping
+            // system->particles[i].velocity = vec3_scale(system->particles[i].velocity, 
+            //                                           DAMPING_FACTOR);
             
             // Check for event horizon crossing
             if (sph_check_event_horizon_crossing(system->particles[i].position, 
@@ -1680,21 +1744,13 @@ void sph_integrate_rk4(SPHSystem* system, double dt) {
         }
     }
     
+    sph_apply_radiative_cooling(system, dt);
+    sph_apply_viscous_heating(system, dt);
+    //add the sph_validate_paricles here when debuging why I have NaNs
     // Update simulation time
     system->current_time += dt;
     system->last_update_time = dt;
-    
-cleanup:
-    free(k1_pos);
-    free(k1_vel);
-    free(k2_pos);
-    free(k2_vel);
-    free(k3_pos);
-    free(k3_vel);
-    free(k4_pos);
-    free(k4_vel);
-    free(original_pos);
-    free(original_vel);
+
 }
 
 //========================================
@@ -1704,98 +1760,28 @@ cleanup:
 // Update smoothing lengths based on local density
 void sph_update_smoothing_lengths(SPHSystem* system) {
     if (!system) return;
-     
-    const double TARGET_NEIGHBORS = 64.0;  // Target number of neighbors **Why 32 when MAX_Neighbours is 64?
-    const double MIN_H = 0.1;              // Minimum smoothing length
-    const double MAX_H = 2.0;              // Maximum smoothing length
-    const double H_TOLERANCE = 0.05;       // Convergence tolerance
-    const int MAX_ITERATIONS = 10;         // Maximum iterations per particle
     
-    #pragma omp parallel for schedule(dynamic)
+    const double TARGET_NEIGHBORS = 32.0;
+    const double MIN_H = 0.1;
+    const double MAX_H = 2.0;
+    
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < system->particle_count; i++) {
         SPHParticle* particle = &system->particles[i];
         
         if (!(particle->flags & PARTICLE_ACTIVE)) continue;
         
-        double h_old = particle->smoothing_length;
-        double h_new = h_old;
+        // Use existing neighbor count (already computed!)
+        double neighbor_ratio = (double)particle->neighbor_count / TARGET_NEIGHBORS;
         
-        // Iterative smoothing length adjustment
-        for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
-            // Count actual neighbors within current smoothing length
-            int actual_neighbors = 0;
-            double volume_sum = 0.0;
-            
-            for (int j = 0; j < system->particle_count; j++) {
-                if (i == j) continue;
-                
-                SPHParticle* neighbor = &system->particles[j];
-                if (!(neighbor->flags & PARTICLE_ACTIVE)) continue;
-                
-                Vec3 dr = vec3_sub(particle->position, neighbor->position);
-                double r = vec3_length(dr);
-                
-                if (r < h_new) {
-                    actual_neighbors++;
-                    // Accumulate kernel volume for density estimation
-                    volume_sum += sph_wendland_c2_kernel(r, h_new);
-                }
-            }
-            
-            // Add self-contribution
-            volume_sum += sph_wendland_c2_kernel(0.0, h_new);
-            
-            // Calculate density-based smoothing length
-            // h ∝ (m/ρ)^(1/d) where d is dimension (3D)
-            double density_estimate = particle->mass * volume_sum;
-            if (density_estimate > MIN_DENSITY) {
-                double h_density = pow(particle->mass / density_estimate, 1.0/3.0);
-                h_density *= 1.2; // Scale factor for SPH kernel support
-                
-                // Blend density-based and neighbor-count-based estimates
-                double neighbor_ratio = (double)actual_neighbors / TARGET_NEIGHBORS;
-                double h_neighbors = h_new * pow(neighbor_ratio, -1.0/3.0);
-                
-                // Weighted average
-                h_new = 0.7 * h_density + 0.3 * h_neighbors;
-            } else {
-                // Fallback: adjust based on neighbor count only
-                double neighbor_ratio = (double)actual_neighbors / TARGET_NEIGHBORS;
-                if (neighbor_ratio > 0.1) {
-                    h_new = h_new * pow(neighbor_ratio, -1.0/3.0);
-                } else {
-                    h_new *= 1.1; // Increase if too few neighbors
-                }
-            }
+        if (neighbor_ratio > 0.1) {
+            double h_new = particle->smoothing_length * pow(neighbor_ratio, -1.0/3.0);
             
             // Apply bounds
             if (h_new < MIN_H) h_new = MIN_H;
             if (h_new > MAX_H) h_new = MAX_H;
             
-            // Check convergence
-            double h_change = fabs(h_new - h_old) / h_old;
-            if (h_change < H_TOLERANCE) break;
-            
-            h_old = h_new;
-        }
-        
-        particle->smoothing_length = h_new;
-        
-        // Update neighbor count for performance tracking
-        particle->neighbor_count = 0;
-        for (int j = 0; j < system->particle_count; j++) {
-            if (i == j) continue;
-            
-            SPHParticle* neighbor = &system->particles[j];
-            if (!(neighbor->flags & PARTICLE_ACTIVE)) continue;
-            
-            Vec3 dr = vec3_sub(particle->position, neighbor->position);
-            double r = vec3_length(dr);
-            
-            if (r < h_new && particle->neighbor_count < MAX_NEIGHBORS) {
-                particle->neighbors[particle->neighbor_count] = j;
-                particle->neighbor_count++;
-            }
+            particle->smoothing_length = h_new;
         }
     }
 }
@@ -1812,7 +1798,8 @@ double sph_calculate_adaptive_time_step(SPHSystem* system) {
     const double VISCOUS_FACTOR = 0.125; // Viscous time step factor
     const double MIN_DT = 1e-6;         // Minimum allowed time step
     const double MAX_DT = 0.01;         // Maximum allowed time step
-    #pragma omp parallel for schedule(static)
+    
+    //#pragma omp parallel for schedule(static) reduction(min:dt_min)
     for (int i = 0; i < system->particle_count; i++) {
         SPHParticle* particle = &system->particles[i];
         
@@ -1820,7 +1807,7 @@ double sph_calculate_adaptive_time_step(SPHSystem* system) {
         
         double h = particle->smoothing_length;
         double rho = particle->density;
-        
+
         // 1. CFL condition: dt < CFL * h / (c_s + |v|)
         double sound_speed = sqrt(system->gas_constant * particle->pressure / rho);
         double velocity_magnitude = vec3_length(particle->velocity);
@@ -2031,7 +2018,7 @@ void sph_calculate_temperature(SPHSystem* system) {
     if (!system) return;
      
     const double MIN_TEMPERATURE = 10.0;    // Minimum temperature (K)
-    const double MAX_TEMPERATURE = 50000.0; // Maximum temperature (K)
+    const double MAX_TEMPERATURE = 90000.0; // Maximum temperature (K)
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < system->particle_count; i++) {
         SPHParticle* particle = &system->particles[i];
@@ -2202,7 +2189,7 @@ void sph_apply_viscous_heating(SPHSystem* system, double dt) {
         
         // Calculate viscous heating from velocity shear
         for (int n = 0; n < particle_i->neighbor_count; n++) {
-            int j = particle_i->neighbors[n];
+            int j = particle_i->neighbours[n];
             if (j >= system->particle_count || i == j) continue;
             
             SPHParticle* particle_j = &system->particles[j];
@@ -2241,7 +2228,7 @@ void sph_apply_viscous_heating(SPHSystem* system, double dt) {
         double divergence = 0.0;
         
         for (int n = 0; n < particle_i->neighbor_count; n++) {
-            int j = particle_i->neighbors[n];
+            int j = particle_i->neighbours[n];
             if (j >= system->particle_count || i == j) continue;
             
             SPHParticle* particle_j = &system->particles[j];
@@ -2317,9 +2304,6 @@ void sph_apply_viscous_heating(SPHSystem* system, double dt) {
     }
 }
 
-//========================================
-// Rendering Functions
-//========================================
 
 
 

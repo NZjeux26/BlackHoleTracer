@@ -13,15 +13,15 @@
 
 // SPH Configuration constants
 #define MAX_PARTICLES            131072       // Maximum number of particles **This will need to be dropped in size heavily for testing
-#define MAX_NEIGHBORS            64          // Maximum neighbors per particle
-#define HASH_TABLE_SIZE          524288      // Spatial hash table size (power of 2)
-#define GRID_CELL_SIZE           0.5         // Size of spatial grid cells
+#define MAX_NEIGHBORS            64          // Maximum neighbours per particle
+#define HASH_TABLE_SIZE          262144      // Spatial hash table size (power of 2) 262144 524288 
+#define GRID_CELL_SIZE           0.2        // Size of spatial grid cells was 0.5 
 #define SPH_KERNEL_RADIUS        1.0
 #define SPH_KERNEL_RADIUS_SQ     (SPH_KERNEL_RADIUS * SPH_KERNEL_RADIUS)
 #define REST_DENSITY             1.0         // Rest density of fluid
 #define GAS_CONSTANT             20.0        // Gas constant for pressure calculation
 #define VISCOSITY_COEFF          0.1         // Viscosity coefficient
-#define DAMPING_FACTOR           0.99        // Velocity damping factor
+#define DAMPING_FACTOR           0.25        // Velocity damping factor
 #define MIN_DENSITY              0.01        // Minimum density threshold
 #define MAX_DENSITY              10.0        // Maximum density threshold
 #define SURFACE_TENSION          0.0728      // Surface tension coefficient
@@ -71,7 +71,7 @@ typedef struct {
     uint32_t flags;
     uint32_t id;
     int neighbor_count;
-    uint32_t neighbors[MAX_NEIGHBORS];
+    uint32_t neighbours[MAX_NEIGHBORS];
 
     // Kerr black hole
     double orbital_velocity;
@@ -126,6 +126,18 @@ typedef struct {
     double last_update_time;
     int neighbor_searches;
     int density_calculations;
+
+    //memory preallocation
+    Vec3* rk4_k1_pos;
+    Vec3* rk4_k1_vel;
+    Vec3* rk4_k2_pos;
+    Vec3* rk4_k2_vel;
+    Vec3* rk4_k3_pos;
+    Vec3* rk4_k3_vel;
+    Vec3* rk4_k4_pos;
+    Vec3* rk4_k4_vel;
+    Vec3* rk4_original_pos;
+    Vec3* rk4_original_vel;
 } SPHSystem;
 
 //========================================
@@ -153,7 +165,7 @@ void sph_initialise_thermal_equilibrium(SPHSystem* system);
 void sph_clear_hash_table(SPHSystem* system);
 void sph_build_hash_table(SPHSystem* system);
 uint32_t sph_hash_position(Vec3 position, double cell_size);
-void sph_find_neighbors(SPHSystem* system, int particle_index);
+void sph_find_neighbours(SPHSystem* system, int particle_index);
 
 // Kernel functions
 double sph_wendland_c2_kernel(double r, double h);
