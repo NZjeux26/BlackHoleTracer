@@ -142,13 +142,15 @@ int main() {
         int i = n * 1000;
         if (i >= sph_system->particle_count) break;
 
-        printf("Particle %d: pos(%.2f,%.2f,%.2f) vel(%.2f,%.2f,%.2f)\n", 
+        printf("Particle %d: pos(%.2f,%.2f,%.2f) vel(%.2f,%.2f,%.2f) temp(%.2f) themenergy(%.2f)\n", 
             i, sph_system->particles[i].position.x, 
             sph_system->particles[i].position.y, 
             sph_system->particles[i].position.z,
             sph_system->particles[i].velocity.x,
             sph_system->particles[i].velocity.y,
-            sph_system->particles[i].velocity.z);
+            sph_system->particles[i].velocity.z,
+            sph_system->particles[i].temperature,
+            sph_system->particles[i].thermal_energy);
     }
 
     SPHGPUData* gpu_data = create_sph_gpu_data(sph_system->max_particles);
@@ -184,8 +186,8 @@ int main() {
     bool save_image = true;
     bool should_render = true;
     bool particle_render = true;
-    int particle_steps = 1000;
-    float dt = 0.05f;
+    int particle_steps = 100;
+    float dt = 0.0001f;
     
     //amx threads for particle simulation
     
@@ -236,13 +238,15 @@ int main() {
                 int i = n * 1000;
                 if (i >= sph_system->particle_count) break;
 
-                printf("Particle %d: pos(%.2f,%.2f,%.2f) vel(%.2f,%.2f,%.2f)\n", 
-                    i, sph_system->particles[i].position.x, 
-                    sph_system->particles[i].position.y, 
-                    sph_system->particles[i].position.z,
-                    sph_system->particles[i].velocity.x,
-                    sph_system->particles[i].velocity.y,
-                    sph_system->particles[i].velocity.z);
+                printf("Particle %d: pos(%.2f,%.2f,%.2f) vel(%.2f,%.2f,%.2f) temp(%.2f) themenergy(%.2f)\n", 
+                i, sph_system->particles[i].position.x, 
+                sph_system->particles[i].position.y, 
+                sph_system->particles[i].position.z,
+                sph_system->particles[i].velocity.x,
+                sph_system->particles[i].velocity.y,
+                sph_system->particles[i].velocity.z,
+                sph_system->particles[i].temperature,
+                sph_system->particles[i].thermal_energy);
             }
         }
 

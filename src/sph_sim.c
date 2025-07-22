@@ -213,6 +213,25 @@ void sph_update_system(SPHSystem* system, double dt) {
     // Let RK4 handle ALL physics calculations AND adaptive timestepping
     sph_integrate_rk4(system, dt);
     
+    sph_calculate_thermal_diffusion(system);    
+    sph_apply_radiative_cooling(system, dt); //this is overpowering the temp and cooling it way to fast.
+    sph_apply_viscous_heating(system, dt); //move these to the update loop instead
+    
+    double avg_temp = 0.0;
+    double avg_vel = 0.0;
+    int count = 0;
+
+    for (int i = 0; i < system->particle_count; i++) {
+        if (system->particles[i].flags & PARTICLE_ACTIVE) {
+            avg_temp += system->particles[i].temperature;
+            avg_vel += vec3_length(system->particles[i].velocity);
+            count++;
+        }
+    }
+    if (count > 0) {
+        printf("Step %.6f: Avg Temp = %.2f, Avg Vel = %.2f, Active = %d\n",
+            system->current_time, avg_temp / count, avg_vel / count, count);
+    }
     // Post-integration cleanup
     sph_apply_boundary_conditions(system);
 
@@ -1059,7 +1078,7 @@ void sph_calculate_density(SPHSystem* system) {
         if (particle_i->density < MIN_DENSITY) particle_i->density = MIN_DENSITY;
         if (particle_i->density > MAX_DENSITY) particle_i->density = MAX_DENSITY;
         
-        system->density_calculations++;
+        system->density_calculations++; //make this threadsafe with atomic
     }
 }
 
@@ -1116,7 +1135,7 @@ void sph_calculate_forces(SPHSystem* system) {
             continue;
         }
         
-        // Process all neighbors for this particle
+        // Process all neighbours for this particle
         for (int n = 0; n < particle_i->neighbor_count; n++) {
             int j = particle_i->neighbours[n];
             
@@ -1387,7 +1406,7 @@ void sph_calculate_thermal_diffusion(SPHSystem* system) {
         }
         
         // Apply directly to thermal_energy instead of overwriting thermal_diffusion
-        particle_i->thermal_energy += thermal_diffusion_rate * system->dt;
+       // particle_i->ther
     }
 }
 
@@ -1624,10 +1643,10 @@ void sph_integrate_rk4(SPHSystem* system, double dt) {
     // Stage 1: k1 = f(t, y)
     sph_build_hash_table(system);
     sph_calculate_density(system);
+    sph_calculate_temperature(system);
     sph_calculate_pressure(system);
-    sph_calculate_thermal_diffusion(system);
     sph_calculate_forces(system);
-    //sph_calculate_viscosity_forces(system);
+   
     
     
     for (int i = 0; i < system->particle_count; i++) {
@@ -1649,10 +1668,10 @@ void sph_integrate_rk4(SPHSystem* system, double dt) {
     
     sph_build_hash_table(system);
     sph_calculate_density(system);
+    sph_calculate_temperature(system);
     sph_calculate_pressure(system);
-    sph_calculate_thermal_diffusion(system);
     sph_calculate_forces(system);
-    //sph_calculate_viscosity_forces(system);
+ 
     
     for (int i = 0; i < system->particle_count; i++) {
         if (system->particles[i].flags & PARTICLE_ACTIVE) {
@@ -1673,10 +1692,10 @@ void sph_integrate_rk4(SPHSystem* system, double dt) {
     
     sph_build_hash_table(system);
     sph_calculate_density(system);
+    sph_calculate_temperature(system);
     sph_calculate_pressure(system);
-    sph_calculate_thermal_diffusion(system);
     sph_calculate_forces(system);
-    //sph_calculate_viscosity_forces(system);
+   
     
     for (int i = 0; i < system->particle_count; i++) {
         if (system->particles[i].flags & PARTICLE_ACTIVE) {
@@ -1697,8 +1716,8 @@ void sph_integrate_rk4(SPHSystem* system, double dt) {
     
     sph_build_hash_table(system);
     sph_calculate_density(system);
+    sph_calculate_temperature(system);
     sph_calculate_pressure(system);
-    sph_calculate_thermal_diffusion(system); //this is causing a lot of issues!
     sph_calculate_forces(system);
     sph_calculate_viscosity_forces(system);
 
@@ -1743,9 +1762,7 @@ void sph_integrate_rk4(SPHSystem* system, double dt) {
             }
         }
     }
-    
-    sph_apply_radiative_cooling(system, dt);
-    sph_apply_viscous_heating(system, dt);
+
     //add the sph_validate_paricles here when debuging why I have NaNs
     // Update simulation time
     system->current_time += dt;
@@ -1797,7 +1814,7 @@ double sph_calculate_adaptive_time_step(SPHSystem* system) {
     const double FORCE_FACTOR = 0.25;   // Force-based time step factor
     const double VISCOUS_FACTOR = 0.125; // Viscous time step factor
     const double MIN_DT = 1e-6;         // Minimum allowed time step
-    const double MAX_DT = 0.01;         // Maximum allowed time step
+    const double MAX_DT = 0.001;         // Maximum allowed time step
     
     //#pragma omp parallel for schedule(static) reduction(min:dt_min)
     for (int i = 0; i < system->particle_count; i++) {
@@ -2013,7 +2030,10 @@ void sph_apply_boundary_conditions(SPHSystem* system) {
 // Thermal Dynamics
 //========================================
 
-// Calculate temperature from thermal energy and apply thermal diffusion
+// Calculate temperature from thermal energy and apply thermal diffusion *Both this and pressure update the pressure
+// This function assumes thermal energy is already calculated in the system
+// and that specific heat is set for each particle.
+// It updates the temperature, thermal energy, and pressure of each particle.
 void sph_calculate_temperature(SPHSystem* system) {
     if (!system) return;
      
@@ -2055,10 +2075,10 @@ void sph_calculate_temperature(SPHSystem* system) {
         
         // Calculate thermal pressure contribution
         // P_thermal = ρ * R_specific * T
-        double thermal_pressure = particle->density * 0.287 * particle->temperature / 1000.0; // Simplified gas constant
+        //double thermal_pressure = particle->density * 0.287 * particle->temperature / 1000.0; // Simplified gas constant
         
         // Update total pressure (already calculated in sph_calculate_pressure, but add thermal component)
-        particle->pressure += thermal_pressure;
+        //particle->pressure += thermal_pressure;
         
         // Update particle thermal flags
         if (particle->temperature > 5000.0) {
@@ -2066,9 +2086,6 @@ void sph_calculate_temperature(SPHSystem* system) {
         } else {
             particle->flags &= ~PARTICLE_HOT;
         }
-        
-        // Calculate thermal velocity for sound speed
-        double thermal_velocity = sqrt(particle->temperature / 1000.0); // Simplified NOT USED
         
         // Update smoothing length based on thermal state (hotter = larger h)
         if (particle->flags & PARTICLE_HOT) {
@@ -2084,7 +2101,7 @@ void sph_apply_radiative_cooling(SPHSystem* system, double dt) {
     // Physical constants (in simulation units)
     const double STEFAN_BOLTZMANN = 5.67e-8;  // Stefan-Boltzmann constant
     const double OPACITY_BASE = 0.1;          // Base opacity
-    const double COOLING_EFFICIENCY = 1.0;    // Cooling efficiency factor
+    const double COOLING_EFFICIENCY = 0.25;    // Cooling efficiency factor
    
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < system->particle_count; i++) {
