@@ -217,21 +217,21 @@ void sph_update_system(SPHSystem* system, double dt) {
     sph_apply_radiative_cooling(system, dt); //this is overpowering the temp and cooling it way to fast.
     sph_apply_viscous_heating(system, dt); //move these to the update loop instead
     
-    double avg_temp = 0.0;
-    double avg_vel = 0.0;
-    int count = 0;
+    // double avg_temp = 0.0;
+    // double avg_vel = 0.0;
+    // int count = 0;
 
-    for (int i = 0; i < system->particle_count; i++) {
-        if (system->particles[i].flags & PARTICLE_ACTIVE) {
-            avg_temp += system->particles[i].temperature;
-            avg_vel += vec3_length(system->particles[i].velocity);
-            count++;
-        }
-    }
-    if (count > 0) {
-        printf("Step %.6f: Avg Temp = %.2f, Avg Vel = %.2f, Active = %d\n",
-            system->current_time, avg_temp / count, avg_vel / count, count);
-    }
+    // for (int i = 0; i < system->particle_count; i++) {
+    //     if (system->particles[i].flags & PARTICLE_ACTIVE) {
+    //         avg_temp += system->particles[i].temperature;
+    //         avg_vel += vec3_length(system->particles[i].velocity);
+    //         count++;
+    //     }
+    // }
+    // if (count > 0) {
+    //     printf("Step %.6f: Avg Temp = %.2f, Avg Vel = %.2f, Active = %d\n",
+    //         system->current_time, avg_temp / count, avg_vel / count, count);
+    // }
     // Post-integration cleanup
     sph_apply_boundary_conditions(system);
 
@@ -2101,7 +2101,7 @@ void sph_apply_radiative_cooling(SPHSystem* system, double dt) {
     // Physical constants (in simulation units)
     const double STEFAN_BOLTZMANN = 5.67e-8;  // Stefan-Boltzmann constant
     const double OPACITY_BASE = 0.1;          // Base opacity
-    const double COOLING_EFFICIENCY = 0.25;    // Cooling efficiency factor
+    const double COOLING_EFFICIENCY = 0.45;    // Cooling efficiency factor
    
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < system->particle_count; i++) {

@@ -132,17 +132,17 @@ int main() {
 
     // Set up accretion disk particles
     printf("Initialising accretion disk particles...\n");
-    sph_initialise_accretion_disk(sph_system, &params, 65536);  // Inner radius: 6, Outer: 20, 4096 particles
+    sph_initialise_accretion_disk(sph_system, &params, (MAX_PARTICLES / 2));  // Inner radius: 6, Outer: 20, 4096 particles
     sph_initialise_keplerian_velocities(sph_system);
     sph_initialise_thermal_equilibrium(sph_system);
 
     printf("SPH system initialised with %d particles\n", sph_system->particle_count);
 
-    for (int n = 0; n < 10; n++) {
-        int i = n * 1000;
+    for (int n = 0; n < 15; n++) {
+        int i = n * 10000;
         if (i >= sph_system->particle_count) break;
 
-        printf("Particle %d: pos(%.2f,%.2f,%.2f) vel(%.2f,%.2f,%.2f) temp(%.2f) themenergy(%.2f)\n", 
+        printf("Particle %d: pos(%.2f,%.2f,%.2f) vel(%.2f,%.2f,%.2f) temp(%.2f) density(%.2f)\n", 
             i, sph_system->particles[i].position.x, 
             sph_system->particles[i].position.y, 
             sph_system->particles[i].position.z,
@@ -150,7 +150,7 @@ int main() {
             sph_system->particles[i].velocity.y,
             sph_system->particles[i].velocity.z,
             sph_system->particles[i].temperature,
-            sph_system->particles[i].thermal_energy);
+            sph_system->particles[i].density);
     }
 
     SPHGPUData* gpu_data = create_sph_gpu_data(sph_system->max_particles);
@@ -186,7 +186,7 @@ int main() {
     bool save_image = true;
     bool should_render = true;
     bool particle_render = true;
-    int particle_steps = 100;
+    int particle_steps = 1000;
     float dt = 0.0001f;
     
     //amx threads for particle simulation
@@ -234,11 +234,11 @@ int main() {
             
             printf("New Particle data:\n");
             //debug
-           for (int n = 0; n < 10; n++) {
-                int i = n * 1000;
+           for (int n = 0; n < 15; n++) {
+                int i = n * 10000;
                 if (i >= sph_system->particle_count) break;
 
-                printf("Particle %d: pos(%.2f,%.2f,%.2f) vel(%.2f,%.2f,%.2f) temp(%.2f) themenergy(%.2f)\n", 
+                printf("Particle %d: pos(%.2f,%.2f,%.2f) vel(%.2f,%.2f,%.2f) temp(%.2f) density(%.2f)\n", 
                 i, sph_system->particles[i].position.x, 
                 sph_system->particles[i].position.y, 
                 sph_system->particles[i].position.z,
@@ -246,7 +246,7 @@ int main() {
                 sph_system->particles[i].velocity.y,
                 sph_system->particles[i].velocity.z,
                 sph_system->particles[i].temperature,
-                sph_system->particles[i].thermal_energy);
+                sph_system->particles[i].density);
             }
         }
 
