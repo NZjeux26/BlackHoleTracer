@@ -380,102 +380,102 @@ vec3 calculateParticleContribution(vec3 point, int particle_index, vec4 observer
 vec3 particleVolumetricRender(vec4 start_pos, vec4 ray_dir, float max_distance, vec4 observer_pos, mat4 frame) {
       // Debug: Return pure red to verify function is being called
     //return vec3(0.0, 1.0, 0.0);
-    // int samples = 8;
-    // float step_size = max_distance / float(samples);
-    // vec4 current_pos = start_pos;
-
-    // for (int i = 0; i < samples; ++i) {
-    //     vec3 sample_point = current_pos.yzw;
-        
-    //     // Get particles from current hash cell and neighbors
-    //     int particle_indices[9]; // Max particles to check
-    //     int particle_count = 0;
-        
-    //     // Check current cell
-    //     getParticlesFromHashCell(sample_point, particle_indices, particle_count);
-        
-    //     // Check neighboring cells (simplified - just check a few key neighbors)
-    //     vec3 cell_offset = vec3(u_grid_cell_size * 0.5);
-    //     getParticlesFromHashCell(sample_point + vec3(cell_offset.x, 0, 0), particle_indices, particle_count);
-    //     getParticlesFromHashCell(sample_point + vec3(0, cell_offset.y, 0), particle_indices, particle_count);
-    //     getParticlesFromHashCell(sample_point + vec3(0, 0, cell_offset.z), particle_indices, particle_count);
-        
-    //     // DEBUG: If any particles found, just return red immediately
-    //     if (particle_count > 0) {
-    //         return vec3(1.0, 0.0, 0.0);
-    //     }
-        
-    //     current_pos += ray_dir * step_size;
-    // }
-
-    //  return vec3(0.0, 0.0, 0.0); // Black if no particles found
-    vec3 accumulated_colour = vec3(0.0);
-    float accumulated_opacity = 0.0;
-    
-    int samples = 24;
+    int samples = 8;
     float step_size = max_distance / float(samples);
     vec4 current_pos = start_pos;
-    
+
     for (int i = 0; i < samples; ++i) {
-        if (accumulated_opacity > 0.9999) break; // Early termination
-        
         vec3 sample_point = current_pos.yzw;
-        vec3 step_contribution = vec3(0.0);
-        float step_opacity = 0.0;
         
         // Get particles from current hash cell and neighbors
-        int particle_indices[9]; // Max particles to check chnaging this crashes the programs
+        int particle_indices[9]; // Max particles to check
         int particle_count = 0;
         
         // Check current cell
         getParticlesFromHashCell(sample_point, particle_indices, particle_count);
         
         // Check neighboring cells (simplified - just check a few key neighbors)
-        vec3 cell_offset = vec3(u_grid_cell_size);//check whole cell
+        vec3 cell_offset = vec3(u_grid_cell_size * 0.5);
         getParticlesFromHashCell(sample_point + vec3(cell_offset.x, 0, 0), particle_indices, particle_count);
         getParticlesFromHashCell(sample_point + vec3(0, cell_offset.y, 0), particle_indices, particle_count);
         getParticlesFromHashCell(sample_point + vec3(0, 0, cell_offset.z), particle_indices, particle_count);
         
-        // Process only the nearby particles
-        for (int p = 0; p < particle_count; p++) {
-            int particle_idx = particle_indices[p];
-            
-            vec4 pos_mass = getParticlePosition(particle_idx);
-            vec3 particle_pos = pos_mass.xyz;
-            
-            float dist = length(sample_point - particle_pos);
-            
-            // Check if particle is within influence radius
-            vec4 properties = getParticleProperties(particle_idx);
-            float smoothing_length = properties.z;
-
-            if (dist < smoothing_length) {
-                vec3 particle_contrib = calculateParticleContribution(sample_point, particle_idx, observer_pos);
-                step_contribution += particle_contrib;
-                
-                // FIXED: Boost the opacity contribution significantly
-                vec4 vel_density = getParticleVelocity(particle_idx);
-                float density = vel_density.w;
-                float kernel_weight = wendlandC2Kernel(dist, smoothing_length);
-                
-                // Much larger multiplier instead of 0.1
-                step_opacity += density * kernel_weight * step_size * 5.0; // Increased from 0.1 to 5.0
-            }
+        // DEBUG: If any particles found, just return red immediately
+        if (particle_count > 0) {
+            return vec3(1.0, 0.0, 0.0);
         }
-        
-        // Limit opacity per step
-        step_opacity = min(step_opacity, 0.9);
-        
-        // Apply extinction
-        float extinction = exp(-accumulated_opacity * 1.5);
-        
-        accumulated_colour += step_contribution * extinction;
-        accumulated_opacity += step_opacity * (1.0 - accumulated_opacity * 0.25);
         
         current_pos += ray_dir * step_size;
     }
+
+     return vec3(0.0, 0.0, 0.0); // Black if no particles found
+    // vec3 accumulated_colour = vec3(0.0);
+    // float accumulated_opacity = 0.0;
     
-    return accumulated_colour;
+    // int samples = 24;
+    // float step_size = max_distance / float(samples);
+    // vec4 current_pos = start_pos;
+    
+    // for (int i = 0; i < samples; ++i) {
+    //     if (accumulated_opacity > 0.9999) break; // Early termination
+        
+    //     vec3 sample_point = current_pos.yzw;
+    //     vec3 step_contribution = vec3(0.0);
+    //     float step_opacity = 0.0;
+        
+    //     // Get particles from current hash cell and neighbors
+    //     int particle_indices[9]; // Max particles to check chnaging this crashes the programs
+    //     int particle_count = 0;
+        
+    //     // Check current cell
+    //     getParticlesFromHashCell(sample_point, particle_indices, particle_count);
+        
+    //     // Check neighboring cells (simplified - just check a few key neighbors)
+    //     vec3 cell_offset = vec3(u_grid_cell_size);//check whole cell
+    //     getParticlesFromHashCell(sample_point + vec3(cell_offset.x, 0, 0), particle_indices, particle_count);
+    //     getParticlesFromHashCell(sample_point + vec3(0, cell_offset.y, 0), particle_indices, particle_count);
+    //     getParticlesFromHashCell(sample_point + vec3(0, 0, cell_offset.z), particle_indices, particle_count);
+        
+    //     // Process only the nearby particles
+    //     for (int p = 0; p < particle_count; p++) {
+    //         int particle_idx = particle_indices[p];
+            
+    //         vec4 pos_mass = getParticlePosition(particle_idx);
+    //         vec3 particle_pos = pos_mass.xyz;
+            
+    //         float dist = length(sample_point - particle_pos);
+            
+    //         // Check if particle is within influence radius
+    //         vec4 properties = getParticleProperties(particle_idx);
+    //         float smoothing_length = properties.z;
+
+    //         if (dist < smoothing_length) {
+    //             vec3 particle_contrib = calculateParticleContribution(sample_point, particle_idx, observer_pos);
+    //             step_contribution += particle_contrib;
+                
+    //             // FIXED: Boost the opacity contribution significantly
+    //             vec4 vel_density = getParticleVelocity(particle_idx);
+    //             float density = vel_density.w;
+    //             float kernel_weight = wendlandC2Kernel(dist, smoothing_length);
+                
+    //             // Much larger multiplier instead of 0.1
+    //             step_opacity += density * kernel_weight * step_size * 5.0; // Increased from 0.1 to 5.0
+    //         }
+    //     }
+        
+    //     // Limit opacity per step
+    //     step_opacity = min(step_opacity, 0.9);
+        
+    //     // Apply extinction
+    //     float extinction = exp(-accumulated_opacity * 1.5);
+        
+    //     accumulated_colour += step_contribution * extinction;
+    //     accumulated_opacity += step_opacity * (1.0 - accumulated_opacity * 0.25);
+        
+    //     current_pos += ray_dir * step_size;
+    // }
+    
+    // return accumulated_colour;
     
 }
 
@@ -486,6 +486,7 @@ vec3 trace_kerr_ray_particles(vec3 dir, vec4 camPos, mat4 axes) {
     
     vec4 pos = camPos;
     vec4 dir4D = -axes[0] + vec4(0.0, dir.x, dir.y, dir.z);
+   
     vec4 p = metric(pos) * dir4D;
 
     vec3 disk_contribution = vec3(0.0);
@@ -496,11 +497,11 @@ vec3 trace_kerr_ray_particles(vec3 dir, vec4 camPos, mat4 axes) {
 
     for (int i = 0; i < u_max_steps; i++) {
         transportStep(pos, p);
-
+        //remember that in Kerr-Schild coordinates, the time coordinate is the first component so it's x,y,z,w 
         float r = rFromCoords(pos);
         bool currently_in_disk = (r >= u_disk_inner_radius &&
                                   r <= u_disk_outer_radius &&
-                                  abs(pos.z) < u_disk_thickness);
+                                  abs(pos.w) < u_disk_thickness);
 
         if (currently_in_disk && !in_disk_region) {
             in_disk_region = true;

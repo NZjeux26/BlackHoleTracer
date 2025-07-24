@@ -2101,7 +2101,7 @@ void sph_apply_radiative_cooling(SPHSystem* system, double dt) {
     // Physical constants (in simulation units)
     const double STEFAN_BOLTZMANN = 5.67e-8;  // Stefan-Boltzmann constant
     const double OPACITY_BASE = 0.1;          // Base opacity
-    const double COOLING_EFFICIENCY = 0.45;    // Cooling efficiency factor
+    const double COOLING_EFFICIENCY = 0.25;    // Cooling efficiency factor
    
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < system->particle_count; i++) {
