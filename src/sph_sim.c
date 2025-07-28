@@ -1788,7 +1788,7 @@ void sph_update_smoothing_lengths(SPHSystem* system) {
         
         if (!(particle->flags & PARTICLE_ACTIVE)) continue;
         
-        // Use existing neighbor count (already computed!)
+        // Use existing neighbour count (already computed!)
         double neighbor_ratio = (double)particle->neighbor_count / TARGET_NEIGHBORS;
         
         if (neighbor_ratio > 0.1) {

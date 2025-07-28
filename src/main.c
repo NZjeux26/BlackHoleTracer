@@ -120,7 +120,7 @@ int main() {
     //setup the BH parameters Mass(geometrix units), Spin(% speed of C), Distance (gemoetric units)
     // Note: In geometric units, mass is in terms of Schwarzschild radius (M = 1)
     // Spin is dimensionless (a/M), where -1 ≤ a/M ≤ 1, and distance is in terms of Schwarzschild radius.
-    BlackHoleParams params = init_BH_params(1.0, 0.2, 30.0); // Mass and distance from black hole
+    BlackHoleParams params = init_BH_params(1.0, 0.2, 30.0); // Mass, spin and distance from black hole
 
     // Initialize SPH system for accretion disk
     SPHSystem* sph_system = sph_create_system(MAX_PARTICLES, &params); 
@@ -132,7 +132,7 @@ int main() {
 
     // Set up accretion disk particles
     printf("Initialising accretion disk particles...\n");
-    sph_initialise_accretion_disk(sph_system, &params, 8096);  // Inner radius: 6, Outer: 20, 4096 particles
+    sph_initialise_accretion_disk(sph_system, &params, (MAX_PARTICLES / 2));  // Inner radius: 6, Outer: 20, 4096 particles
     sph_initialise_keplerian_velocities(sph_system);
     sph_initialise_thermal_equilibrium(sph_system);
 
@@ -158,9 +158,6 @@ int main() {
         fprintf(stderr, "Failed to create SPH GPU data\n");
         // ... cleanup and return
     }
-
-    // Upload particle data to GPU
-    //upload_sph_particles_to_gpu(sph_system, gpu_data);
     
     // Initialize SDL_image for PNG saving
     if (IMG_Init(IMG_INIT_PNG) == 0) {
@@ -212,7 +209,7 @@ int main() {
                 sph_update_system(sph_system,dt);
                 //Print an update so you know where in the program you are.
                 if(i % 100 == 0){
-                    printf("%d Particle Steps Completed\n", i); //this will output the time fromt he beginning to this step, not between steps
+                    printf("%d Particle Steps Completed\n", i);
                 }
             }
             
@@ -349,8 +346,7 @@ int main() {
     glDeleteProgram(shader_program);
     // Cleanup textures
     glDeleteTextures(1, &skybox_texture);
-    //glDeleteTextures(1, &disk_texture);
-     // Cleanup SPH system
+    // Cleanup SPH system
     cleanup_sph_gpu_data(gpu_data);
     sph_destroy_system(sph_system);
 
