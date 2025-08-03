@@ -12,4 +12,6 @@ I also worked at a VFX stuido, so leveraging the very talented crewmates I have 
 
 This is the current up to date production. At the moment it's just a schwarzschild blackhole but in te process of making into a Kerr blackhole. See the Images folder for more renders in different skyboxes, camera angles and directions.
 
+There are two branches, with the 4D version being my attempt to fully switch over to using Kerr-Schild metrics. While getting soley the blackhole and its surround effects was pretty easy getting a SPH simualted accretion disk was proving too diffacult with the current tech stack. Maybe one day with better skills I can come back and re-factor but for now I'm leaving this alone.
+
 ![blackhole_gpu](https://github.com/user-attachments/assets/a5491207-b468-4649-9b57-963138ae6bd0)
